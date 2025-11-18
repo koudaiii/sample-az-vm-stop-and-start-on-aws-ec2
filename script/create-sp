@@ -12,6 +12,10 @@ usage() {
 Usage: $0 [options]
 
 Create an Azure Service Principal with a custom role for VM start/stop operations.
+This script is idempotent - it can be run multiple times safely:
+  - If the Service Principal exists, credentials will be reset
+  - If the custom role exists, it will be updated with the latest definition
+  - If the role assignment exists, it will be skipped
 
 Options:
     --name <name>              Service Principal name (default: vm-management-sp)
@@ -22,9 +26,10 @@ The custom role will have only these permissions:
     - Microsoft.Compute/virtualMachines/start/action
     - Microsoft.Compute/virtualMachines/deallocate/action
     - Microsoft.Compute/virtualMachines/read
+    - Microsoft.Compute/virtualMachines/instanceView/read
 
 Example:
-    $0 
+    $0
     $0  --name my-sp
 EOF
     exit 1
@@ -83,11 +88,12 @@ cat > "$ROLE_DEF_FILE" <<EOF
 {
   "Name": "$ROLE_NAME",
   "IsCustom": true,
-  "Description": "Can start and stop virtual machines",
+  "Description": "Can start, stop, and read virtual machines",
   "Actions": [
     "Microsoft.Compute/virtualMachines/start/action",
     "Microsoft.Compute/virtualMachines/deallocate/action",
-    "Microsoft.Compute/virtualMachines/read"
+    "Microsoft.Compute/virtualMachines/read",
+    "Microsoft.Compute/virtualMachines/instanceView/read"
   ],
   "NotActions": [],
   "AssignableScopes": [
@@ -100,7 +106,13 @@ EOF
 EXISTING_ROLE=$(az role definition list --output json | jq --arg roleName "$ROLE_NAME" '.[] | select(.roleName == $roleName)')
 
 if [[ -n "$EXISTING_ROLE" ]]; then
-    echo "ℹ  Custom role '$ROLE_NAME' already exists. Skipping role creation."
+    echo "ℹ  Custom role '$ROLE_NAME' already exists. Updating role definition..."
+    if az role definition update --role-definition "$ROLE_DEF_FILE" --output none; then
+        echo "✓ Custom role '$ROLE_NAME' updated successfully!"
+    else
+        echo "Error: Failed to update custom role" >&2
+        exit 1
+    fi
 else
     # カスタムロールを作成
     echo "Creating custom role..."
@@ -113,44 +125,67 @@ else
 fi
 
 echo ""
-echo "Creating Service Principal: $SP_NAME"
+echo "Checking for existing Service Principal: $SP_NAME"
 echo ""
 
-# Service Principalを作成
-set +e
-# stderrとstdoutを分離して、警告メッセージを除外
-SP_OUTPUT=$(az ad sp create-for-rbac \
-    --name "$SP_NAME" \
-    --role "$ROLE_NAME" \
-    --scopes "/subscriptions/$SUBSCRIPTION_ID" \
-    --output json 2>/dev/null)
-SP_EXIT_CODE=$?
-set -e
+# 既存のService Principalをチェック
+EXISTING_SP_APP_ID=$(az ad sp list --display-name "$SP_NAME" --query '[0].appId' -o tsv 2>/dev/null || echo "")
 
-if [[ $SP_EXIT_CODE -ne 0 ]]; then
-    # エラーの場合は詳細を再取得
-    SP_ERROR=$(az ad sp create-for-rbac \
+if [[ -n "$EXISTING_SP_APP_ID" ]]; then
+    echo "ℹ  Service Principal '$SP_NAME' already exists (App ID: $EXISTING_SP_APP_ID)"
+    echo "Resetting credentials..."
+
+    # 既存のService Principalのシークレットをリセット
+    SP_OUTPUT=$(az ad sp credential reset \
+        --id "$EXISTING_SP_APP_ID" \
+        --output json 2>/dev/null)
+
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Failed to reset Service Principal credentials" >&2
+        exit 1
+    fi
+
+    echo "✓ Service Principal credentials reset successfully!"
+
+    # ロール割り当てが存在するかチェック
+    EXISTING_ROLE_ASSIGNMENT=$(az role assignment list \
+        --assignee "$EXISTING_SP_APP_ID" \
+        --role "$ROLE_NAME" \
+        --scope "/subscriptions/$SUBSCRIPTION_ID" \
+        --query '[0].id' -o tsv 2>/dev/null || echo "")
+
+    if [[ -z "$EXISTING_ROLE_ASSIGNMENT" ]]; then
+        echo "Assigning role '$ROLE_NAME' to Service Principal..."
+        az role assignment create \
+            --assignee "$EXISTING_SP_APP_ID" \
+            --role "$ROLE_NAME" \
+            --scope "/subscriptions/$SUBSCRIPTION_ID" \
+            --output none
+        echo "✓ Role assigned successfully!"
+    else
+        echo "ℹ  Role '$ROLE_NAME' already assigned to Service Principal"
+    fi
+else
+    echo "Creating new Service Principal: $SP_NAME"
+
+    # 新規Service Principalを作成
+    SP_OUTPUT=$(az ad sp create-for-rbac \
         --name "$SP_NAME" \
         --role "$ROLE_NAME" \
         --scopes "/subscriptions/$SUBSCRIPTION_ID" \
-        --output json 2>&1) || true
+        --output json 2>/dev/null)
 
-    # エラーメッセージに既に存在するという内容が含まれているかチェック
-    if echo "$SP_ERROR" | grep -q "already exists"; then
-        echo "ℹ  Service Principal '$SP_NAME' already exists."
-        echo "Please use a different name with --name option, or delete the existing one first:" >&2
-        echo "  az ad sp delete --id \$(az ad sp list --display-name '$SP_NAME' --query '[0].appId' -o tsv)" >&2
-        exit 1
-    else
+    if [[ $? -ne 0 ]]; then
         echo "Error: Failed to create Service Principal" >&2
-        echo "$SP_ERROR" >&2
         exit 1
     fi
+
+    echo "✓ Service Principal created successfully!"
 fi
 
 # JSONが有効か検証
 if ! echo "$SP_OUTPUT" | jq empty 2>/dev/null; then
-    echo "Error: Service Principal was created but returned invalid JSON" >&2
+    echo "Error: Received invalid JSON from Azure CLI" >&2
     echo "Output received:" >&2
     echo "$SP_OUTPUT" >&2
     exit 1
@@ -161,7 +196,6 @@ AZURE_CLIENT_ID=$(echo "$SP_OUTPUT" | jq -r '.appId')
 AZURE_CLIENT_SECRET=$(echo "$SP_OUTPUT" | jq -r '.password')
 AZURE_TENANT_ID=$(echo "$SP_OUTPUT" | jq -r '.tenant')
 
-echo "✓ Service Principal created successfully!"
 echo ""
 
 # .env形式で出力
