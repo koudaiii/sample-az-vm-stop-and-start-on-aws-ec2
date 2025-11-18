@@ -128,6 +128,7 @@ AWS Systems Managerを使用して、EC2インスタンス上でスクリプト�
 test/create-vm
 test/create-ec2
 ssh -i <your-key-path> ec2-user@<your-ec2-ip>
+git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
 cd sample-az-vm-stop-and-start-on-aws-ec2/
 script/bootstrap
 ```
