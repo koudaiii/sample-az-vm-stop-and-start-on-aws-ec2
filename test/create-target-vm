@@ -20,11 +20,9 @@ if ! command -v az &> /dev/null; then
     exit 1
 fi
 
-# Check if logged in to Azure
-if ! az account show &> /dev/null; then
-    echo "Not logged in to Azure. Please run 'az login' first."
-    exit 1
-fi
+
+az login
+
 
 echo "Using Azure subscription: $(az account show --query name -o tsv)"
 
