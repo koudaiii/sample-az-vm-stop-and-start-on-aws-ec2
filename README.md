@@ -271,4 +271,4 @@ script/bootstrap
 
 ## ライセンス
 
-MIT
+[LICENSE](./LICENSE)
