@@ -15,7 +15,6 @@ Create an Azure Service Principal with a custom role for VM start/stop operation
 
 Options:
     --name <name>              Service Principal name (default: vm-management-sp)
-    --subscription <sub_id>    Azure Subscription ID (required)
     --role-name <role_name>    Custom role name (default: VM Start Stop Operator)
     -h, --help                 Show this help message
 
@@ -25,15 +24,14 @@ The custom role will have only these permissions:
     - Microsoft.Compute/virtualMachines/read
 
 Example:
-    $0 --subscription xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-    $0 --subscription xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx --name my-sp
+    $0 
+    $0  --name my-sp
 EOF
     exit 1
 }
 
 # パラメータ初期化
 SP_NAME="vm-stop-start-management-sp"
-SUBSCRIPTION_ID=""
 ROLE_NAME="VM Start Stop Operator"
 
 # オプション解析
@@ -41,10 +39,6 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --name)
             SP_NAME="$2"
-            shift 2
-            ;;
-        --subscription)
-            SUBSCRIPTION_ID="$2"
             shift 2
             ;;
         --role-name)
@@ -61,13 +55,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 必須パラメータのチェック
-if [[ -z "$SUBSCRIPTION_ID" ]]; then
-    echo "Error: --subscription option is required" >&2
-    echo ""
-    usage
-fi
-
 # Azure CLIがインストールされているかチェック
 if ! command -v az &> /dev/null; then
     echo "Error: Azure CLI (az) is not installed" >&2
@@ -82,19 +69,11 @@ if ! command -v jq &> /dev/null; then
     exit 1
 fi
 
-# Azureにログインしているかチェック
-if ! az account show &> /dev/null; then
-    echo "Error: Not logged in to Azure" >&2
-    echo "Please run: az login" >&2
-    exit 1
-fi
+# Azureにログイン
+az login
 
-# サブスクリプションを設定
-az account set --subscription "$SUBSCRIPTION_ID"
-
-echo "Creating custom role: $ROLE_NAME"
-echo "Subscription ID: $SUBSCRIPTION_ID"
-echo ""
+# サブスクリプションIDを取得
+SUBSCRIPTION_ID=$(az account show --query id --output tsv)
 
 # カスタムロール定義ファイルを作成
 ROLE_DEF_FILE=$(mktemp)
@@ -118,9 +97,9 @@ cat > "$ROLE_DEF_FILE" <<EOF
 EOF
 
 # 既存のロールをチェック
-EXISTING_ROLE=$(az role definition list --name "$ROLE_NAME" --subscription "$SUBSCRIPTION_ID" --output json)
+EXISTING_ROLE=$(az role definition list --output json | jq --arg roleName "$ROLE_NAME" '.[] | select(.roleName == $roleName)')
 
-if [[ $(echo "$EXISTING_ROLE" | jq '. | length') -gt 0 ]]; then
+if [[ -n "$EXISTING_ROLE" ]]; then
     echo "ℹ  Custom role '$ROLE_NAME' already exists. Skipping role creation."
 else
     # カスタムロールを作成
@@ -139,26 +118,42 @@ echo ""
 
 # Service Principalを作成
 set +e
+# stderrとstdoutを分離して、警告メッセージを除外
 SP_OUTPUT=$(az ad sp create-for-rbac \
     --name "$SP_NAME" \
     --role "$ROLE_NAME" \
     --scopes "/subscriptions/$SUBSCRIPTION_ID" \
-    --output json 2>&1)
+    --output json 2>/dev/null)
 SP_EXIT_CODE=$?
 set -e
 
 if [[ $SP_EXIT_CODE -ne 0 ]]; then
+    # エラーの場合は詳細を再取得
+    SP_ERROR=$(az ad sp create-for-rbac \
+        --name "$SP_NAME" \
+        --role "$ROLE_NAME" \
+        --scopes "/subscriptions/$SUBSCRIPTION_ID" \
+        --output json 2>&1) || true
+
     # エラーメッセージに既に存在するという内容が含まれているかチェック
-    if echo "$SP_OUTPUT" | grep -q "already exists"; then
+    if echo "$SP_ERROR" | grep -q "already exists"; then
         echo "ℹ  Service Principal '$SP_NAME' already exists."
         echo "Please use a different name with --name option, or delete the existing one first:" >&2
         echo "  az ad sp delete --id \$(az ad sp list --display-name '$SP_NAME' --query '[0].appId' -o tsv)" >&2
         exit 1
     else
         echo "Error: Failed to create Service Principal" >&2
-        echo "$SP_OUTPUT" >&2
+        echo "$SP_ERROR" >&2
         exit 1
     fi
+fi
+
+# JSONが有効か検証
+if ! echo "$SP_OUTPUT" | jq empty 2>/dev/null; then
+    echo "Error: Service Principal was created but returned invalid JSON" >&2
+    echo "Output received:" >&2
+    echo "$SP_OUTPUT" >&2
+    exit 1
 fi
 
 # 認証情報を抽出
