@@ -40,13 +40,13 @@ Azureには3種類の認証方法があり、それぞれ異なるユースケ�
 
 ## セットアップ
 
-```bash
+```console
 # リポジトリのクローン
-git clone <repository-url>
-cd sample-az-vm-stop-and-start-on-aws-ec2
+$ git clone <repository-url>
+$ cd sample-az-vm-stop-and-start-on-aws-ec2
 
 # 環境のセットアップと検証
-./script/bootstrap
+$ ./script/bootstrap
 ```
 
 `bootstrap`スクリプトは対話的に以下を行います:
@@ -61,8 +61,8 @@ cd sample-az-vm-stop-and-start-on-aws-ec2
 
 ### VM停止スクリプト
 
-```bash
-./script/stop_vms_by_tag --tags <tags> [options]
+```console
+$ ./script/stop_vms_by_tag --tags <tags> [options]
 ```
 
 オプション:
@@ -76,41 +76,41 @@ cd sample-az-vm-stop-and-start-on-aws-ec2
 
 ### VM起動スクリプト
 
-```bash
-./script/start_vms_by_tag --tags <tags> [options]
+```console
+$ ./script/start_vms_by_tag --tags <tags> [options]
 ```
 
 オプションは停止スクリプトと同様です。
 
 ## 使用例
 
-```bash
+```console
 # 例1: Environmentタグが"Production"のVMを停止
-./script/stop_vms_by_tag --tags Environment=Production
+$ ./script/stop_vms_by_tag --tags Environment=Production
 
 # 例2: 複数のタグ条件でVMを停止
 ## Environment=ProductionかつAutoShutdownタグを持つVMを停止
-./script/stop_vms_by_tag --tags Environment=Production,AutoShutdown
+$ ./script/stop_vms_by_tag --tags Environment=Production,AutoShutdown
 
 ## Environment=ProductionかつOwner=TeamAのVMを停止
-./script/stop_vms_by_tag --tags Environment=Production,Owner=TeamA
+$ ./script/stop_vms_by_tag --tags Environment=Production,Owner=TeamA
 
 # 例3: 特定のリソースグループ内のVMを起動
-./script/start_vms_by_tag --tags Environment=Development --resource-groups myResourceGroup
+$ ./script/start_vms_by_tag --tags Environment=Development --resource-groups myResourceGroup
 
 # 例4: 複数のリソースグループを指定
-./script/start_vms_by_tag --tags Environment=Production --resource-groups rg1,rg2,rg3
+$ ./script/start_vms_by_tag --tags Environment=Production --resource-groups rg1,rg2,rg3
 
 # 例5: ドライランで対象VMを確認
-./script/stop_vms_by_tag --tags Environment=Staging --dry-run
+$ ./script/stop_vms_by_tag --tags Environment=Staging --dry-run
 
 # 例6: タグの値を問わず、特定のタグキーを持つVMを対象にする
 
 ## AutoShutdownタグを持つ全てのVMを停止（値は任意）
-./script/stop_vms_by_tag --tags AutoShutdown
+$ ./script/stop_vms_by_tag --tags AutoShutdown
 
 ## EnvironmentタグかつAutoShutdownタグを持つVMを停止
-./script/stop_vms_by_tag --tags Environment,AutoShutdown
+$ ./script/stop_vms_by_tag --tags Environment,AutoShutdown
 ```
 
 ## AWS EC2での自動化
@@ -141,19 +141,19 @@ AWS Systems Managerを使用して、EC2インスタンス上でスクリプト�
 
 ## テスト環境(on AWS)
 
-```bash
+```console
 $ script/create-sp
 $ cat .env | pbcopy # またはファイルの中身をコピー
 ```
 
-```bash
-$ test/create-target-vm
+```console
+$ test/create-target-vm # Azure 上にある Stop または Start する予定の VM 構築
 ```
 
-```bash
-$ test/create-management-instance
+```console
+$ test/create-management-instance # ツール実行環境用の VM として AWS EC2 を構築
 
-$ ssh -i <your-key-path> ec2-user@<your-ip>
+$ ssh -i <your-key-path> ec2-user@<your-ip> # ツール実行環境へSSHログイン
 
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ cd sample-az-vm-stop-and-start-on-aws-ec2/
@@ -254,13 +254,15 @@ Note: VMs are being started asynchronously. Use 'az vm list --show-details' to c
 
 ## テスト環境(on Azure)
 
-```bash
-test/create-target-vm
+```console
+$ test/create-target-vm # Azure 上にある Stop または Start する予定の VM 構築
 ```
 
-```bash
-test/create-management-vm
-ssh -i <your-key-path> azureuser@<your-ip>
+```console
+$ test/create-management-vm  # ツール実行環境用の VM として Azure VM を構築
+
+$ ssh -i <your-key-path> azureuser@<your-ip>  # ツール実行環境へSSHログイン
+
 git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
 cd sample-az-vm-stop-and-start-on-aws-ec2/
 script/bootstrap
