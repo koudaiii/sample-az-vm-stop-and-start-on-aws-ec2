@@ -106,7 +106,8 @@ cat > "$CUSTOM_ROLE_FILE" <<EOF
     "Microsoft.Compute/virtualMachines/deallocate/action",
     "Microsoft.Compute/virtualMachines/read",
     "Microsoft.Compute/virtualMachines/instanceView/read",
-    "Microsoft.Network/networkInterfaces/read"
+    "Microsoft.Network/networkInterfaces/read",
+    "Microsoft.Network/publicIPAddresses/read"
   ],
   "NotActions": [],
   "AssignableScopes": [
@@ -157,6 +158,7 @@ echo "  - Microsoft.Compute/virtualMachines/deallocate/action"
 echo "  - Microsoft.Compute/virtualMachines/read"
 echo "  - Microsoft.Compute/virtualMachines/instanceView/read"
 echo "  - Microsoft.Network/networkInterfaces/read"
+echo "  - Microsoft.Network/publicIPAddresses/read"
 echo ""
 echo "Pre-installed tools:"
 echo "  - Git"

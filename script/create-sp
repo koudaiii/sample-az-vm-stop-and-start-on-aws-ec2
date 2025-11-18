@@ -28,6 +28,7 @@ The custom role will have only these permissions:
     - Microsoft.Compute/virtualMachines/read
     - Microsoft.Compute/virtualMachines/instanceView/read
     - Microsoft.Network/networkInterfaces/read
+    - Microsoft.Network/publicIPAddresses/read
 
 Example:
     $0
@@ -95,7 +96,8 @@ cat > "$ROLE_DEF_FILE" <<EOF
     "Microsoft.Compute/virtualMachines/deallocate/action",
     "Microsoft.Compute/virtualMachines/read",
     "Microsoft.Compute/virtualMachines/instanceView/read",
-    "Microsoft.Network/networkInterfaces/read"
+    "Microsoft.Network/networkInterfaces/read",
+    "Microsoft.Network/publicIPAddresses/read"
   ],
   "NotActions": [],
   "AssignableScopes": [
