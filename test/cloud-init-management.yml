@@ -1,0 +1,22 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - git
+  - jq
+  - curl
+
+runcmd:
+  # Install Azure CLI
+  - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+  # Verify installations
+  - echo "Azure CLI version:" >> /var/log/cloud-init-output.log
+  - az --version >> /var/log/cloud-init-output.log 2>&1
+  - echo "Git version:" >> /var/log/cloud-init-output.log
+  - git --version >> /var/log/cloud-init-output.log 2>&1
+  - echo "jq version:" >> /var/log/cloud-init-output.log
+  - jq --version >> /var/log/cloud-init-output.log 2>&1
+
+final_message: "Management VM setup completed successfully!"

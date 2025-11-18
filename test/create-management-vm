@@ -1,0 +1,177 @@
+#!/bin/bash
+
+# This script creates an Azure management VM with Managed Identity for VM management.
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Variables
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-azure-vm-rg}"
+LOCATION="${AZURE_LOCATION:-japaneast}"
+TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+VM_NAME="${AZURE_VM_NAME:-management-vm$TIMESTAMP}"
+IMAGE="Ubuntu2204"
+KEY_PATH="$HOME/.ssh/ed25519_keypair"
+CLOUD_INIT_FILE="$SCRIPT_DIR/cloud-init-management.yml"
+
+# Check if Azure CLI is installed
+if ! command -v az &> /dev/null; then
+    echo "Error: Azure CLI is not installed. Please install it first."
+    echo "Visit: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
+    exit 1
+fi
+
+# Check if cloud-init file exists
+if [ ! -f "$CLOUD_INIT_FILE" ]; then
+    echo "Error: Cloud-init file not found: $CLOUD_INIT_FILE"
+    exit 1
+fi
+
+az login
+
+echo "Using Azure subscription: $(az account show --query name -o tsv)"
+SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+
+# Create SSH key pair if it doesn't exist
+if [ ! -f "$KEY_PATH" ]; then
+    echo "Creating SSH key pair..."
+    ssh-keygen -t ed25519 -f "$KEY_PATH" -N "" -C "azure-vm"
+    chmod 600 "$KEY_PATH"
+fi
+
+# Create resource group if it doesn't exist
+if ! az group show --name "$RESOURCE_GROUP" &>/dev/null; then
+    echo "Creating resource group: $RESOURCE_GROUP in $LOCATION..."
+    az group create \
+        --name "$RESOURCE_GROUP" \
+        --location "$LOCATION" \
+        --output table
+else
+    echo "Resource group $RESOURCE_GROUP already exists"
+fi
+
+# Create Azure Management VM with Managed Identity
+echo "Creating Azure Management VM: $VM_NAME (Location: $LOCATION)..."
+echo "This VM will have:"
+echo "  - System-assigned Managed Identity with custom role"
+echo "  - Custom role: VM Start Stop Operator"
+echo "    Permissions: start, stop, and read VMs only"
+echo "  - Git, Azure CLI, and jq pre-installed"
+echo "  - Public IP for SSH access"
+echo ""
+
+az vm create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$VM_NAME" \
+    --location "$LOCATION" \
+    --image "$IMAGE" \
+    --ssh-key-values "${KEY_PATH}.pub" \
+    --assign-identity \
+    --public-ip-sku Standard \
+    --custom-data "$CLOUD_INIT_FILE" \
+    --tags "project=sample-az-vm-stop-and-start-on-aws-ec2" "role=management" \
+    --output json 2>/dev/null > /tmp/vm-create-output.json
+
+if [ $? -ne 0 ] || [ ! -s /tmp/vm-create-output.json ]; then
+    echo ""
+    echo "ERROR: Failed to create VM. Common issues:"
+    echo "  1. VM size may not be available in '$LOCATION'"
+    echo "  2. Try a different location: export AZURE_LOCATION='westus'"
+    echo ""
+    echo "Check available VM sizes:"
+    echo "  az vm list-sizes --location $LOCATION --output table"
+    exit 1
+fi
+
+echo "VM created successfully!"
+
+# Get VM details
+PUBLIC_IP=$(jq -r '.publicIpAddress' /tmp/vm-create-output.json)
+PRIVATE_IP=$(jq -r '.privateIpAddress' /tmp/vm-create-output.json)
+PRINCIPAL_ID=$(az vm identity show --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" --query principalId -o tsv)
+
+# Create custom role definition
+CUSTOM_ROLE_NAME="VM Start Stop Operator"
+CUSTOM_ROLE_FILE="/tmp/vm-start-stop-role-$TIMESTAMP.json"
+
+echo ""
+echo "Creating custom role definition..."
+
+cat > "$CUSTOM_ROLE_FILE" <<EOF
+{
+  "Name": "$CUSTOM_ROLE_NAME",
+  "Description": "Can start, stop, and read virtual machines",
+  "Actions": [
+    "Microsoft.Compute/virtualMachines/start/action",
+    "Microsoft.Compute/virtualMachines/deallocate/action",
+    "Microsoft.Compute/virtualMachines/read",
+    "Microsoft.Compute/virtualMachines/instanceView/read"
+  ],
+  "NotActions": [],
+  "AssignableScopes": [
+    "/subscriptions/$SUBSCRIPTION_ID"
+  ]
+}
+EOF
+
+# Check if custom role already exists
+if az role definition list --name "$CUSTOM_ROLE_NAME" --query "[0].name" -o tsv 2>/dev/null | grep -q "."; then
+    echo "Custom role '$CUSTOM_ROLE_NAME' already exists, skipping creation..."
+else
+    echo "Creating custom role '$CUSTOM_ROLE_NAME'..."
+    az role definition create --role-definition "$CUSTOM_ROLE_FILE" --output table
+fi
+
+# Wait for role propagation
+echo "Waiting for role propagation (10 seconds)..."
+sleep 10
+
+# Assign custom role to the Managed Identity
+echo ""
+echo "Assigning '$CUSTOM_ROLE_NAME' role to Managed Identity..."
+az role assignment create \
+    --assignee "$PRINCIPAL_ID" \
+    --role "$CUSTOM_ROLE_NAME" \
+    --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP" \
+    --output table
+
+# Clean up role definition file
+rm -f "$CUSTOM_ROLE_FILE"
+
+echo ""
+echo "=========================================="
+echo "Azure Management VM created successfully!"
+echo "=========================================="
+echo "Resource Group: $RESOURCE_GROUP"
+echo "VM Name: $VM_NAME"
+echo "Location: $LOCATION"
+echo "Public IP: $PUBLIC_IP"
+echo "Private IP: $PRIVATE_IP"
+echo "Managed Identity Principal ID: $PRINCIPAL_ID"
+echo ""
+echo "Custom Role: $CUSTOM_ROLE_NAME (scoped to $RESOURCE_GROUP)"
+echo "Permissions:"
+echo "  - Microsoft.Compute/virtualMachines/start/action"
+echo "  - Microsoft.Compute/virtualMachines/deallocate/action"
+echo "  - Microsoft.Compute/virtualMachines/read"
+echo "  - Microsoft.Compute/virtualMachines/instanceView/read"
+echo ""
+echo "Pre-installed tools:"
+echo "  - Git"
+echo "  - Azure CLI"
+echo "  - jq"
+echo ""
+echo "SSH Connection:"
+echo "  ssh -i $KEY_PATH azureuser@$PUBLIC_IP"
+echo ""
+echo "To verify Managed Identity authentication on the VM:"
+echo "  ssh -i $KEY_PATH azureuser@$PUBLIC_IP"
+echo "  az login --identity"
+echo "  az vm list -g $RESOURCE_GROUP --output table"
+echo ""
+echo "To delete the VM and resources:"
+echo "  az group delete --name $RESOURCE_GROUP --yes --no-wait"
+echo ""
+echo "To delete the custom role:"
+echo "  az role definition delete --name '$CUSTOM_ROLE_NAME'"
+echo "=========================================="
