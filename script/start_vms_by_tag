@@ -197,8 +197,8 @@ echo "$VMS" | jq -c '.[]' | while read -r vm; do
     VM_RG=$(echo "$vm" | jq -r '.ResourceGroup')
     POWER_STATE=$(echo "$vm" | jq -r '.PowerState')
 
-    if [[ "$POWER_STATE" == "VM running" ]]; then
-        echo "  ⏭  $VM_NAME is already running (skipping)"
+    if [[ "$POWER_STATE" == "VM running" ]] || [[ "$POWER_STATE" == "VM starting" ]]; then
+        echo "  ⏭  $VM_NAME is already running or starting (skipping)"
         continue
     fi
 

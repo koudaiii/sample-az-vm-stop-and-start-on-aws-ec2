@@ -197,8 +197,8 @@ echo "$VMS" | jq -c '.[]' | while read -r vm; do
     VM_RG=$(echo "$vm" | jq -r '.ResourceGroup')
     POWER_STATE=$(echo "$vm" | jq -r '.PowerState')
 
-    if [[ "$POWER_STATE" == "VM deallocated" ]] || [[ "$POWER_STATE" == "VM stopped" ]]; then
-        echo "  ⏭  $VM_NAME is already stopped (skipping)"
+    if [[ "$POWER_STATE" == "VM deallocated" ]] || [[ "$POWER_STATE" == "VM stopped" ]] || [[ "$POWER_STATE" == "VM deallocating" ]]; then
+        echo "  ⏭  $VM_NAME is already stopped or stopping (skipping)"
         continue
     fi
 
