@@ -25,7 +25,7 @@ load_env_file "$PROJECT_ROOT/.env"
 # 使用方法を表示
 usage() {
     cat <<EOF
-Usage: $0 --tags <tags> [--resource-groups <resource_groups>] [-d]
+Usage: $0 --tags <tags> [--resource-groups <resource_groups>] [--dry-run]
 
 Options:
     --tags <tags>                    Tags to filter VMs (required)
@@ -33,8 +33,8 @@ Options:
                                      - key=value: Match VMs with this exact tag
                                      - key: Match VMs that have this tag (any value)
     --resource-groups <resource_groups>  Resource group names (optional, comma-separated)
-    -d                               Dry run mode (only show VMs, don't start them)
-    -h                               Show this help message
+    --dry-run                        Dry run mode (only show VMs, don't start them)
+    -h, --help                       Show this help message
 
 Environment Variables (optional):
     AZURE_CLIENT_ID      Azure Service Principal Client ID
@@ -52,7 +52,7 @@ Example:
     $0 --tags Environment=Production
     $0 --tags Environment=Production,AutoStartup
     $0 --tags Environment=Production,Owner=TeamA --resource-groups myResourceGroup
-    $0 --tags Environment=Production -d
+    $0 --tags Environment=Production --dry-run
 EOF
     exit 1
 }
@@ -99,7 +99,7 @@ while [[ $# -gt 0 ]]; do
             RESOURCE_GROUPS="$2"
             shift 2
             ;;
-        -d)
+        --dry-run)
             DRY_RUN=true
             shift
             ;;

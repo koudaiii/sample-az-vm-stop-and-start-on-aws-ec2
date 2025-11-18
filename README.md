@@ -71,8 +71,8 @@ cd sample-az-vm-stop-and-start-on-aws-ec2
   - `key=value`: 指定したタグキーと値が完全一致するVMにマッチ
   - `key`: 指定したタグキーを持つVM（値は任意）にマッチ
 - `--resource-groups <resource_groups>`: リソースグループ名で絞り込み (オプション、カンマ区切りで複数指定可能)
-- `-d`: ドライランモード (VMを停止せず、対象VMのみ表示)
-- `-h`: ヘルプメッセージを表示
+- `--dry-run`: ドライランモード (VMを停止せず、対象VMのみ表示)
+- `-h, --help`: ヘルプメッセージを表示
 
 ### VM起動スクリプト
 
@@ -102,7 +102,7 @@ cd sample-az-vm-stop-and-start-on-aws-ec2
 ./script/start_vms_by_tag --tags Environment=Production --resource-groups rg1,rg2,rg3
 
 # 例5: ドライランで対象VMを確認
-./script/stop_vms_by_tag --tags Environment=Staging -d
+./script/stop_vms_by_tag --tags Environment=Staging --dry-run
 
 # 例6: タグの値を問わず、特定のタグキーを持つVMを対象にする
 
