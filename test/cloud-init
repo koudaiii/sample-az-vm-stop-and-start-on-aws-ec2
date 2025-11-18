@@ -27,7 +27,6 @@ runcmd:
   - az version
   - git --version
   - jq --version
-  - git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
   
   # Log completion
   - echo "Cloud-init setup completed successfully" >> /var/log/cloud-init-custom.log
