@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# This script creates an Azure VM using Azure CLI.
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Variables
+RESOURCE_GROUP="${AZURE_RESOURCE_GROUP:-azure-vm-rg}"
+LOCATION="${AZURE_LOCATION:-japaneast}"
+TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+VM_NAME="${AZURE_VM_NAME:-test-vm$TIMESTAMP}"
+IMAGE="Ubuntu2204"
+KEY_PATH="$HOME/.ssh/ed25519_keypair"
+
+# Check if Azure CLI is installed
+if ! command -v az &> /dev/null; then
+    echo "Error: Azure CLI is not installed. Please install it first."
+    echo "Visit: https://docs.microsoft.com/en-us/cli/azure/install-azure-cli"
+    exit 1
+fi
+
+# Check if logged in to Azure
+if ! az account show &> /dev/null; then
+    echo "Not logged in to Azure. Please run 'az login' first."
+    exit 1
+fi
+
+echo "Using Azure subscription: $(az account show --query name -o tsv)"
+
+# Create SSH key pair if it doesn't exist
+if [ ! -f "$KEY_PATH" ]; then
+    echo "Creating SSH key pair..."
+    ssh-keygen -t ed25519 -f "$KEY_PATH" -N "" -C "azure-vm"
+    chmod 600 "$KEY_PATH"
+fi
+
+# Create resource group if it doesn't exist
+if ! az group show --name "$RESOURCE_GROUP" &>/dev/null; then
+    echo "Creating resource group: $RESOURCE_GROUP in $LOCATION..."
+    az group create \
+        --name "$RESOURCE_GROUP" \
+        --location "$LOCATION" \
+        --output table
+else
+    echo "Resource group $RESOURCE_GROUP already exists"
+fi
+
+# Create Azure VM
+echo "Creating Azure VM: $VM_NAME (Location: $LOCATION)..."
+az vm create \
+    --resource-group "$RESOURCE_GROUP" \
+    --name "$VM_NAME" \
+    --location "$LOCATION" \
+    --image "$IMAGE" \
+    --ssh-key-values "${KEY_PATH}.pub" \
+    --tags "project=sample-az-vm-stop-and-start-on-aws-ec2" \
+    --output json 2>/dev/null > /tmp/vm-create-output.json
+
+if [ $? -ne 0 ] || [ ! -s /tmp/vm-create-output.json ]; then
+    echo ""
+    echo "ERROR: Failed to create VM. Common issues:"
+    echo "  1. VM size may not be available in '$LOCATION'"
+    echo "  2. Try a different location: export AZURE_LOCATION='westus'"
+    echo ""
+    echo "Check available VM sizes:"
+    echo "  az vm list-sizes --location $LOCATION --output table"
+    exit 1
+fi
+
+echo "VM created successfully!"
+
+echo ""
+echo "=========================================="
+echo "Azure VM created successfully!"
+echo "=========================================="
+echo "Resource Group: $RESOURCE_GROUP"
+echo "VM Name: $VM_NAME"
+echo "Private IP: $(jq -r '.privateIpAddress' /tmp/vm-create-output.json)"
+echo "Tags: project=sample-az-vm-stop-and-start-on-aws-ec2"
+echo ""
+echo "To delete the VM and resources:"
+echo "  az group delete --name $RESOURCE_GROUP --yes --no-wait"
+echo "=========================================="
+
+

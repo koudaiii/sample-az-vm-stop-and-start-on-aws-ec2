@@ -1,0 +1,180 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 使用方法を表示
+usage() {
+    cat <<EOF
+Usage: $0 [options]
+
+Create an Azure Service Principal with a custom role for VM start/stop operations.
+
+Options:
+    --name <name>              Service Principal name (default: vm-management-sp)
+    --subscription <sub_id>    Azure Subscription ID (required)
+    --role-name <role_name>    Custom role name (default: VM Start Stop Operator)
+    -h, --help                 Show this help message
+
+The custom role will have only these permissions:
+    - Microsoft.Compute/virtualMachines/start/action
+    - Microsoft.Compute/virtualMachines/deallocate/action
+    - Microsoft.Compute/virtualMachines/read
+
+Example:
+    $0 --subscription xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    $0 --subscription xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx --name my-sp
+EOF
+    exit 1
+}
+
+# パラメータ初期化
+SP_NAME="vm-stop-start-management-sp"
+SUBSCRIPTION_ID=""
+ROLE_NAME="VM Start Stop Operator"
+
+# オプション解析
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --name)
+            SP_NAME="$2"
+            shift 2
+            ;;
+        --subscription)
+            SUBSCRIPTION_ID="$2"
+            shift 2
+            ;;
+        --role-name)
+            ROLE_NAME="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option: $1" >&2
+            usage
+            ;;
+    esac
+done
+
+# 必須パラメータのチェック
+if [[ -z "$SUBSCRIPTION_ID" ]]; then
+    echo "Error: --subscription option is required" >&2
+    echo ""
+    usage
+fi
+
+# Azure CLIがインストールされているかチェック
+if ! command -v az &> /dev/null; then
+    echo "Error: Azure CLI (az) is not installed" >&2
+    echo "Please install it from: https://learn.microsoft.com/cli/azure/install-azure-cli?view=azure-cli-latest" >&2
+    exit 1
+fi
+
+# jqがインストールされているかチェック
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is not installed" >&2
+    echo "Please install jq to parse JSON output" >&2
+    exit 1
+fi
+
+# Azureにログインしているかチェック
+if ! az account show &> /dev/null; then
+    echo "Error: Not logged in to Azure" >&2
+    echo "Please run: az login" >&2
+    exit 1
+fi
+
+# サブスクリプションを設定
+az account set --subscription "$SUBSCRIPTION_ID"
+
+echo "Creating custom role: $ROLE_NAME"
+echo "Subscription ID: $SUBSCRIPTION_ID"
+echo ""
+
+# カスタムロール定義ファイルを作成
+ROLE_DEF_FILE=$(mktemp)
+trap "rm -f $ROLE_DEF_FILE" EXIT
+
+cat > "$ROLE_DEF_FILE" <<EOF
+{
+  "Name": "$ROLE_NAME",
+  "IsCustom": true,
+  "Description": "Can start and stop virtual machines",
+  "Actions": [
+    "Microsoft.Compute/virtualMachines/start/action",
+    "Microsoft.Compute/virtualMachines/deallocate/action",
+    "Microsoft.Compute/virtualMachines/read"
+  ],
+  "NotActions": [],
+  "AssignableScopes": [
+    "/subscriptions/$SUBSCRIPTION_ID"
+  ]
+}
+EOF
+
+# 既存のロールをチェック
+EXISTING_ROLE=$(az role definition list --name "$ROLE_NAME" --subscription "$SUBSCRIPTION_ID" --output json)
+
+if [[ $(echo "$EXISTING_ROLE" | jq '. | length') -gt 0 ]]; then
+    echo "ℹ  Custom role '$ROLE_NAME' already exists. Skipping role creation."
+else
+    # カスタムロールを作成
+    echo "Creating custom role..."
+    if az role definition create --role-definition "$ROLE_DEF_FILE" --output none; then
+        echo "✓ Custom role '$ROLE_NAME' created successfully!"
+    else
+        echo "Error: Failed to create custom role" >&2
+        exit 1
+    fi
+fi
+
+echo ""
+echo "Creating Service Principal: $SP_NAME"
+echo ""
+
+# Service Principalを作成
+set +e
+SP_OUTPUT=$(az ad sp create-for-rbac \
+    --name "$SP_NAME" \
+    --role "$ROLE_NAME" \
+    --scopes "/subscriptions/$SUBSCRIPTION_ID" \
+    --output json 2>&1)
+SP_EXIT_CODE=$?
+set -e
+
+if [[ $SP_EXIT_CODE -ne 0 ]]; then
+    # エラーメッセージに既に存在するという内容が含まれているかチェック
+    if echo "$SP_OUTPUT" | grep -q "already exists"; then
+        echo "ℹ  Service Principal '$SP_NAME' already exists."
+        echo "Please use a different name with --name option, or delete the existing one first:" >&2
+        echo "  az ad sp delete --id \$(az ad sp list --display-name '$SP_NAME' --query '[0].appId' -o tsv)" >&2
+        exit 1
+    else
+        echo "Error: Failed to create Service Principal" >&2
+        echo "$SP_OUTPUT" >&2
+        exit 1
+    fi
+fi
+
+# 認証情報を抽出
+AZURE_CLIENT_ID=$(echo "$SP_OUTPUT" | jq -r '.appId')
+AZURE_CLIENT_SECRET=$(echo "$SP_OUTPUT" | jq -r '.password')
+AZURE_TENANT_ID=$(echo "$SP_OUTPUT" | jq -r '.tenant')
+
+echo "✓ Service Principal created successfully!"
+echo ""
+
+# .env形式で出力
+cat > "$PROJECT_ROOT/.env" <<EOF
+# Azure Service Principal credentials
+AZURE_CLIENT_ID=$AZURE_CLIENT_ID
+AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET
+AZURE_TENANT_ID=$AZURE_TENANT_ID
+EOF
+
+echo "✓ .env file created at $PROJECT_ROOT/.env"

@@ -1,0 +1,222 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# 色の定義
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ステータス表示関数
+print_status() {
+    echo -e "${BLUE}==>${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+# ツールのチェック
+check_tool() {
+    local tool_name="$1"
+    local check_command="${2:-$tool_name}"
+
+    if command -v "$check_command" &> /dev/null; then
+        print_success "$tool_name is installed"
+        return 0
+    else
+        print_error "$tool_name is not installed"
+        return 1
+    fi
+}
+
+# OSの検出
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if [[ -f /etc/os-release ]]; then
+            . /etc/os-release
+            echo "$ID"
+        else
+            echo "linux"
+        fi
+    else
+        echo "unknown"
+    fi
+}
+
+echo "=========================================="
+echo "  Azure VM Stop and Start Management Bootstrap"
+echo "=========================================="
+echo ""
+
+print_status "Detecting operating system..."
+OS=$(detect_os)
+print_success "Operating System: $OS"
+echo ""
+
+# ツールのチェック
+print_status "Checking required tools..."
+echo ""
+
+TOOLS_OK=true
+
+# Azure CLI のチェック
+if ! check_tool "Azure CLI" "az"; then
+    TOOLS_OK=false
+    echo ""
+    echo "To install Azure CLI:"
+    case "$OS" in
+        macos)
+            echo "  brew install azure-cli"
+            ;;
+        ubuntu|debian)
+            echo "  curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"
+            ;;
+        amzn)
+            echo "  sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc"
+            echo "  sudo sh -c 'echo -e \"[azure-cli]\" > /etc/yum.repos.d/azure-cli.repo'"
+            echo "  sudo yum install -y azure-cli"
+            ;;
+        *)
+            echo "  See: https://learn.microsoft.com/cli/azure/install-azure-cli"
+            ;;
+    esac
+fi
+
+# jq のチェック
+if ! check_tool "jq" "jq"; then
+    TOOLS_OK=false
+    echo ""
+    echo "To install jq:"
+    case "$OS" in
+        macos)
+            echo "  brew install jq"
+            ;;
+        ubuntu|debian)
+            echo "  sudo apt-get install -y jq"
+            ;;
+        amzn)
+            echo "  sudo yum install -y jq"
+            ;;
+        *)
+            echo "  See: https://stedolan.github.io/jq/download/"
+            ;;
+    esac
+fi
+
+echo ""
+
+if [[ "$TOOLS_OK" != true ]]; then
+    echo "Please install the missing tools and run this script again."
+    echo ""
+fi
+
+# .env ファイルの確認
+print_status "Checking environment configuration..."
+ENV_FILE="$PROJECT_ROOT/.env"
+
+if [[ -f "$ENV_FILE" ]]; then
+    print_success ".env file exists"
+else
+    print_error ".env file does not exist"
+    echo ""
+    echo "To create a Service Principal and .env file:"
+    echo "  az login"
+    echo "  $SCRIPT_DIR/create-sp --subscription <your-subscription-id>"
+    echo ""
+    echo "Or create .env manually with:"
+    echo "  AZURE_CLIENT_ID=<your-client-id>"
+    echo "  AZURE_CLIENT_SECRET=<your-client-secret>"
+    echo "  AZURE_TENANT_ID=<your-tenant-id>"
+fi
+
+echo ""
+echo "=========================================="
+print_status "Bootstrap Summary"
+echo "=========================================="
+echo ""
+
+# 最終チェック
+ALL_READY=true
+
+# ツールチェック
+if command -v az &> /dev/null && command -v jq &> /dev/null; then
+    print_success "Required tools: OK"
+else
+    print_error "Required tools: Missing"
+    ALL_READY=false
+fi
+
+# 環境変数チェック
+if [[ -f "$ENV_FILE" ]]; then
+    source <(grep -v '^#' "$ENV_FILE" | grep -v '^[[:space:]]*$')
+
+    if [[ -n "${AZURE_CLIENT_ID:-}" ]] && [[ -n "${AZURE_CLIENT_SECRET:-}" ]] && [[ -n "${AZURE_TENANT_ID:-}" ]]; then
+        print_success "Environment configuration: OK"
+    else
+        print_error "Environment configuration: Incomplete"
+        ALL_READY=false
+    fi
+else
+    print_error "Environment configuration: Missing .env file"
+    ALL_READY=false
+fi
+
+if [[ -f "$ENV_FILE" ]]; then
+    # 環境変数の読み込み
+    set -a
+    source <(grep -v '^#' "$ENV_FILE" | grep -v '^[[:space:]]*$')
+    set +a
+
+    # Service Principal の検証
+    print_status "Validating Service Principal credentials..."
+    if az login --service-principal \
+        -u "$AZURE_CLIENT_ID" \
+        -p "$AZURE_CLIENT_SECRET" \
+        --tenant "$AZURE_TENANT_ID" \
+        --output none 2>&1; then
+        print_success "Service Principal credentials are valid"
+
+        # VM一覧の取得テスト
+        print_status "Testing VM list access..."
+        VM_COUNT=$(az vm list --query 'length(@)' -o tsv 2>/dev/null || echo "0")
+        print_success "Can access $VM_COUNT VM(s)"
+    else
+        print_error "Service Principal credentials are invalid"
+        echo ""
+        print_warning "Please check your .env file or create a new Service Principal."
+    fi
+fi
+
+echo ""
+
+if [[ "$ALL_READY" == true ]]; then
+    print_success "Environment is ready!"
+    echo ""
+    echo "You can now use the VM management scripts:"
+    echo "  $SCRIPT_DIR/stop_vms_by_tag --tags <tags>"
+    echo "  $SCRIPT_DIR/start_vms_by_tag --tags <tags>"
+else
+    print_warning "Environment setup is incomplete."
+    echo ""
+    echo "Please complete the setup and run this script again:"
+    echo "  $0"
+fi
+
+echo ""

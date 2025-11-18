@@ -1,0 +1,16 @@
+# Environment files with secrets
+.env
+
+# Log files
+*.log
+
+# macOS
+.DS_Store
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak

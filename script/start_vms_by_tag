@@ -1,0 +1,225 @@
+#!/bin/bash
+
+set -euo pipefail
+
+# .envファイルを読み込む
+load_env_file() {
+    local env_file="${1:-.env}"
+
+    if [[ -f "$env_file" ]]; then
+        echo "Loading environment variables from $env_file"
+        # 空行とコメント行を除外して読み込む
+        set -a
+        source <(grep -v '^#' "$env_file" | grep -v '^[[:space:]]*$')
+        set +a
+    fi
+}
+
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# .envファイルを読み込む（プロジェクトルートから）
+load_env_file "$PROJECT_ROOT/.env"
+
+# 使用方法を表示
+usage() {
+    cat <<EOF
+Usage: $0 --tags <tags> [--resource-groups <resource_groups>] [-d]
+
+Options:
+    --tags <tags>                    Tags to filter VMs (required)
+                                     Format: key1=value1,key2,key3=value3
+                                     - key=value: Match VMs with this exact tag
+                                     - key: Match VMs that have this tag (any value)
+    --resource-groups <resource_groups>  Resource group names (optional, comma-separated)
+    -d                               Dry run mode (only show VMs, don't start them)
+    -h                               Show this help message
+
+Environment Variables (required if .env file is not present):
+    AZURE_CLIENT_ID      Azure Service Principal Client ID
+    AZURE_CLIENT_SECRET  Azure Service Principal Client Secret
+    AZURE_TENANT_ID      Azure Tenant ID
+
+Note:
+    If a .env file exists in the project root, it will be automatically loaded.
+
+Example:
+    $0 --tags Environment=Production
+    $0 --tags Environment=Production,AutoStartup
+    $0 --tags Environment=Production,Owner=TeamA --resource-groups myResourceGroup
+    $0 --tags Environment=Production -d
+EOF
+    exit 1
+}
+
+# 環境変数のチェック
+check_env_vars() {
+    local missing_vars=()
+
+    if [[ -z "${AZURE_CLIENT_ID:-}" ]]; then
+        missing_vars+=("AZURE_CLIENT_ID")
+    fi
+    if [[ -z "${AZURE_CLIENT_SECRET:-}" ]]; then
+        missing_vars+=("AZURE_CLIENT_SECRET")
+    fi
+    if [[ -z "${AZURE_TENANT_ID:-}" ]]; then
+        missing_vars+=("AZURE_TENANT_ID")
+    fi
+
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        echo "Error: Missing required environment variables: ${missing_vars[*]}" >&2
+        exit 1
+    fi
+}
+
+# タグフィルタを構築する関数
+build_tag_filter() {
+    local tags="$1"
+    local filter_parts=()
+
+    # カンマで分割してタグを処理
+    IFS=',' read -ra TAG_ARRAY <<< "$tags"
+
+    for tag in "${TAG_ARRAY[@]}"; do
+        if [[ "$tag" == *"="* ]]; then
+            # key=value形式
+            key="${tag%%=*}"
+            value="${tag#*=}"
+            filter_parts+=("tags.\"$key\"=='$value'")
+        else
+            # key形式（値は任意）
+            filter_parts+=("tags.\"$tag\"!=null")
+        fi
+    done
+
+    # ANDでフィルタを結合
+    local filter=$(IFS=' && ' ; echo "${filter_parts[*]}")
+    echo "$filter"
+}
+
+# パラメータ初期化
+TAGS=""
+RESOURCE_GROUPS=""
+DRY_RUN=false
+
+# 長いオプションのパース
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --tags)
+            TAGS="$2"
+            shift 2
+            ;;
+        --resource-groups)
+            RESOURCE_GROUPS="$2"
+            shift 2
+            ;;
+        -d)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option: $1" >&2
+            usage
+            ;;
+    esac
+done
+
+# 必須パラメータのチェック
+if [[ -z "$TAGS" ]]; then
+    echo "Error: --tags option is required" >&2
+    usage
+fi
+
+# 環境変数のチェック
+check_env_vars
+
+# Azure にログイン
+echo "Logging in to Azure..."
+az login --service-principal \
+    -u "$AZURE_CLIENT_ID" \
+    -p "$AZURE_CLIENT_SECRET" \
+    --tenant "$AZURE_TENANT_ID" \
+    --output none
+
+echo "Successfully logged in to Azure"
+
+# VMをタグで検索するJMESPathクエリを構築
+TAG_FILTER=$(build_tag_filter "$TAGS")
+QUERY="[?$TAG_FILTER].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
+
+# VMを検索
+echo "Searching for VMs with tags: $TAGS..."
+
+if [[ -n "$RESOURCE_GROUPS" ]]; then
+    echo "Resource group filter: $RESOURCE_GROUPS"
+    # 複数のリソースグループに対応
+    VMS="[]"
+    IFS=',' read -ra RG_ARRAY <<< "$RESOURCE_GROUPS"
+    for rg in "${RG_ARRAY[@]}"; do
+        rg_vms=$(az vm list -g "$rg" --show-details --query "$QUERY" -o json 2>/dev/null || echo "[]")
+        VMS=$(echo "$VMS" "$rg_vms" | jq -s 'add')
+    done
+else
+    VMS=$(az vm list --show-details --query "$QUERY" -o json)
+fi
+
+# VM数を確認
+VM_COUNT=$(echo "$VMS" | jq '. | length')
+
+if [[ "$VM_COUNT" -eq 0 ]]; then
+    echo "No VMs found with tags: $TAGS"
+    exit 0
+fi
+
+echo "Found $VM_COUNT VM(s):"
+echo "$VMS" | jq -r '.[] | "  - \(.Name) (Resource Group: \(.ResourceGroup), Power State: \(.PowerState))"'
+
+if [[ "$DRY_RUN" == true ]]; then
+    echo ""
+    echo "Dry run mode - no VMs will be started"
+    exit 0
+fi
+
+# 確認プロンプト
+echo ""
+read -p "Do you want to start these VMs? (yes/no): " -r
+if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]] && [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Operation cancelled"
+    exit 0
+fi
+
+# VMを起動
+echo ""
+echo "Starting VMs..."
+
+SUCCESS_COUNT=0
+FAILURE_COUNT=0
+
+echo "$VMS" | jq -c '.[]' | while read -r vm; do
+    VM_NAME=$(echo "$vm" | jq -r '.Name')
+    VM_RG=$(echo "$vm" | jq -r '.ResourceGroup')
+    POWER_STATE=$(echo "$vm" | jq -r '.PowerState')
+
+    if [[ "$POWER_STATE" == "VM running" ]]; then
+        echo "  ⏭  $VM_NAME is already running (skipping)"
+        continue
+    fi
+
+    echo "  ▶  Starting $VM_NAME in resource group $VM_RG..."
+
+    if az vm start -n "$VM_NAME" -g "$VM_RG" --no-wait; then
+        echo "  ✓  Start command sent for $VM_NAME"
+        ((SUCCESS_COUNT++))
+    else
+        echo "  ✗  Failed to start $VM_NAME" >&2
+        ((FAILURE_COUNT++))
+    fi
+done
+
+echo ""
+echo "Start operation completed"
+echo "Note: VMs are being started asynchronously. Use 'az vm list --show-details' to check current status."
