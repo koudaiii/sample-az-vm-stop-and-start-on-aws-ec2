@@ -142,19 +142,114 @@ AWS Systems Managerを使用して、EC2インスタンス上でスクリプト�
 ## テスト環境(on AWS)
 
 ```bash
-script/create-sp
+$ script/create-sp
+$ cat .env | pbcopy # またはファイルの中身をコピー
 ```
 
 ```bash
-test/create-target-vm
+$ test/create-target-vm
 ```
 
 ```bash
-test/create-management-instance
-ssh -i <your-key-path> ec2-user@<your-ip>
-git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
-cd sample-az-vm-stop-and-start-on-aws-ec2/
-script/bootstrap
+$ test/create-management-instance
+
+$ ssh -i <your-key-path> ec2-user@<your-ip>
+
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ cd sample-az-vm-stop-and-start-on-aws-ec2/
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ vim .env # コピーした内容を転記
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/bootstrap
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/stop_vms_by_tag --tags project --dry-run
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM running)
+
+Dry run mode - no VMs will be stopped
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/stop_vms_by_tag --tags project 
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM running)
+
+Do you want to stop these VMs? (yes/no): yes
+
+Stopping VMs...
+  ⏸  Stopping test-vm20251119044140 in resource group AZURE-VM-RG...
+  ✓  Stop command sent for test-vm20251119044140
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/stop_vms_by_tag --tags project 
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM deallocating)
+
+Do you want to stop these VMs? (yes/no): yes
+
+Stopping VMs...
+  ⏭  test-vm20251119044140 is already stopped or stopping (skipping)
+
+Stop operation completed
+Note: VMs are being stopped asynchronously. Use 'az vm list --show-details' to check current status.
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/stop_vms_by_tag --tags project 
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM deallocated)
+
+Do you want to stop these VMs? (yes/no): yes
+
+Stopping VMs...
+  ⏭  test-vm20251119044140 is already stopped or stopping (skipping)
+
+Stop operation completed
+Note: VMs are being stopped asynchronously. Use 'az vm list --show-details' to check current status.
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ 
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/start_vms_by_tag --tags project --dry-run
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM deallocated)
+
+Dry run mode - no VMs will be started
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/start_vms_by_tag --tags project
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM deallocated)
+
+Do you want to start these VMs? (yes/no): yes
+
+Starting VMs...
+  ▶  Starting test-vm20251119044140 in resource group AZURE-VM-RG...
+  ✓  Start command sent for test-vm20251119044140
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/start_vms_by_tag --tags project
+Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
+Logging in to Azure with Service Principal...
+Successfully logged in to Azure
+Searching for VMs with tags: project...
+Found 1 VM(s):
+  - test-vm20251119044140 (Resource Group: AZURE-VM-RG, Power State: VM starting)
+
+Do you want to start these VMs? (yes/no): yes
+
+Starting VMs...
+  ⏭  test-vm20251119044140 is already running or starting (skipping)
+
+Start operation completed
+Note: VMs are being started asynchronously. Use 'az vm list --show-details' to check current status.
+[ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ 
 ```
 
 ## テスト環境(on Azure)
