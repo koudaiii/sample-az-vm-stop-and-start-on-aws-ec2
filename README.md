@@ -4,7 +4,24 @@ AWS EC2上でAzure CLIを使用して、タグ指定でAzure VMの起動・停�
 
 ## 概要
 
-このプロジェクトは、AWS EC2インスタンス上でAzure VMを管理するためのBashスクリプトを提供します。Azure Service Principalを使用した認証により、`az login`を対話的に実行することなく、自動化されたVM管理が可能です。
+このプロジェクトは、AWS EC2インスタンス上でAzure VMを管理するためのBashスクリプトを提供します。Azure Service Principalを使用した非対話的認証により、`az login`を対話的に実行することなく、自動化されたVM管理が可能です。
+
+## Azureセキュリティプリンシパルの種類
+
+Azureには3種類の認証方法があり、それぞれ異なるユースケースに適しています:
+
+| 種類 | 説明 | ライフサイクル | 認証情報管理 | 使用場所 | リンク |
+|------|------|----------------|--------------|----------|----|
+| **ユーザー割り当てマネージドID（User-assigned Managed Identity）** | 任意の環境で利用できる | ユーザーが管理 | パスワード/MFA(対話型) | 任意 | https://learn.microsoft.com/cli/azure/authenticate-azure-cli-interactively?view=azure-cli-latest |
+| **システム割り当てマネージドID（System-assigned Managed Identity）** | 特定のAzureリソースに直接紐づく自動割り当てされる特別なサービスプリンシパル | Azureリソースと連動 | Azureが自動管理<br>（認証情報不要） | Azure内のリソース<br>（VM、App Service等） | https://learn.microsoft.com/cli/azure/authenticate-azure-cli-managed-identity?view=azure-cli-latest |
+| **サービスプリンシパル** | アプリケーション用の非人間的ID | 手動で管理 | クライアントシークレット<br>または証明書 | 任意 | https://learn.microsoft.com/cli/azure/azure-cli-sp-tutorial-1?view=azure-cli-latest&tabs=bash |
+
+### サービスプリンシパルを使用する理由
+
+1. **Azure外での実行**: AWS EC2上で動作するため、マネージドIDは使用不可
+2. **非対話的認証**: 自動化スクリプトでの実行に対応
+3. **最小権限**: カスタムロールで必要な権限のみを付与
+4. **クロスクラウド対応**: AWSからAzureリソースを管理
 
 ## 特徴
 
@@ -122,16 +139,38 @@ AWS Systems Managerを使用して、EC2インスタンス上でスクリプト�
 4. 認証情報は定期的にローテーションしてください
 
 
-## テスト環境
+## テスト環境(on AWS)
 
 ```bash
-test/create-vm
-test/create-ec2
-ssh -i <your-key-path> ec2-user@<your-ec2-ip>
+script/create-sp
+```
+
+```bash
+test/create-target-vm
+```
+
+```bash
+test/create-management-instance
+ssh -i <your-key-path> ec2-user@<your-ip>
 git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
 cd sample-az-vm-stop-and-start-on-aws-ec2/
 script/bootstrap
 ```
+
+## テスト環境(on Azure)
+
+```bash
+test/create-target-vm
+```
+
+```bash
+test/create-management-vm
+ssh -i <your-key-path> azureuser@<your-ip>
+git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
+cd sample-az-vm-stop-and-start-on-aws-ec2/
+script/bootstrap
+```
+
 
 ## ライセンス
 
