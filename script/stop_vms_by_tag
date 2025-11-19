@@ -202,7 +202,7 @@ echo "Stopping VMs..."
 SUCCESS_COUNT=0
 FAILURE_COUNT=0
 
-echo "$VMS" | jq -c '.[]' | while read -r vm; do
+while read -r vm; do
     VM_NAME=$(echo "$vm" | jq -r '.Name')
     VM_RG=$(echo "$vm" | jq -r '.ResourceGroup')
     POWER_STATE=$(echo "$vm" | jq -r '.PowerState')
@@ -221,7 +221,7 @@ echo "$VMS" | jq -c '.[]' | while read -r vm; do
         echo "  ✗  Failed to stop $VM_NAME" >&2
         ((FAILURE_COUNT++))
     fi
-done
+done < <(echo "$VMS" | jq -c '.[]')
 
 echo ""
 echo "Stop operation completed"
