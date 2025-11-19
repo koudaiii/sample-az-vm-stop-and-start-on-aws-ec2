@@ -193,9 +193,7 @@ if [[ "$VM_COUNT" -eq 0 ]]; then
 fi
 
 log "Found $VM_COUNT VM(s):"
-if [[ "$QUIET" != true ]]; then
-    echo "$VMS" | jq -r '.[] | "  - \(.Name) (Resource Group: \(.ResourceGroup), Power State: \(.PowerState), Tags: \(.Tags | to_entries | map("\(.key)=\(.value)") | join(", ")))"'
-fi
+echo "$VMS" | jq -r '.[] | "  - \(.Name) (Resource Group: \(.ResourceGroup), Power State: \(.PowerState), Tags: \(.Tags | to_entries | map("\(.key)=\(.value)") | join(", ")))"'
 
 if [[ "$DRY_RUN" == true ]]; then
     log ""
@@ -226,14 +224,14 @@ while read -r vm; do
     POWER_STATE=$(echo "$vm" | jq -r '.PowerState')
 
     if [[ "$POWER_STATE" == "VM deallocated" ]] || [[ "$POWER_STATE" == "VM stopped" ]] || [[ "$POWER_STATE" == "VM deallocating" ]]; then
-        log "  ⏭  $VM_NAME is already stopped or stopping (skipping)"
+        echo "  ⏭  $VM_NAME is already stopped or stopping (skipping)"
         continue
     fi
 
     log "  ⏸  Stopping $VM_NAME in resource group $VM_RG..."
 
     if az vm deallocate -n "$VM_NAME" -g "$VM_RG" --no-wait; then
-        log "  ✓  Stop command sent for $VM_NAME"
+        echo "  ✓  Stop command sent for $VM_NAME"
         ((SUCCESS_COUNT++))
     else
         echo "  ✗  Failed to stop $VM_NAME" >&2
