@@ -25,13 +25,14 @@ load_env_file "$PROJECT_ROOT/.env"
 # 使用方法を表示
 usage() {
     cat <<EOF
-Usage: $0 --tags <tags> [--resource-groups <resource_groups>] [--dry-run]
+Usage: $0 [--tags <tags>] [--resource-groups <resource_groups>] [--dry-run]
 
 Options:
-    --tags <tags>                    Tags to filter VMs (required)
+    --tags <tags>                    Tags to filter VMs (optional)
                                      Format: key1=value1,key2,key3=value3
                                      - key=value: Match VMs with this exact tag
                                      - key: Match VMs that have this tag (any value)
+                                     If not specified with --resource-groups, all VMs in the resource groups will be targeted
     --resource-groups <resource_groups>  Resource group names (optional, comma-separated)
     --dry-run                        Dry run mode (only show VMs, don't start them)
     -h, --help                       Show this help message
@@ -52,6 +53,7 @@ Example:
     $0 --tags Environment=Production
     $0 --tags Environment=Production,AutoStartup
     $0 --tags Environment=Production,Owner=TeamA --resource-groups myResourceGroup
+    $0 --resource-groups myResourceGroup1,myResourceGroup2
     $0 --tags Environment=Production --dry-run
 EOF
     exit 1
@@ -113,9 +115,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 必須パラメータのチェック
-if [[ -z "$TAGS" ]]; then
-    echo "Error: --tags option is required" >&2
+# パラメータのバリデーション
+# --tags も --resource-groups も指定されていない場合はエラー
+if [[ -z "$TAGS" ]] && [[ -z "$RESOURCE_GROUPS" ]]; then
+    echo "Error: At least one of --tags or --resource-groups must be specified" >&2
     usage
 fi
 
@@ -140,12 +143,15 @@ else
     fi
 fi
 
-# VMをタグで検索するJMESPathクエリを構築
-TAG_FILTER=$(build_tag_filter "$TAGS")
-QUERY="[?$TAG_FILTER].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
-
-# VMを検索
-echo "Searching for VMs with tags: $TAGS..."
+# VMを検索するJMESPathクエリを構築
+if [[ -n "$TAGS" ]]; then
+    TAG_FILTER=$(build_tag_filter "$TAGS")
+    QUERY="[?$TAG_FILTER].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
+    echo "Searching for VMs with tags: $TAGS..."
+else
+    QUERY="[].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
+    echo "Searching for all VMs..."
+fi
 
 if [[ -n "$RESOURCE_GROUPS" ]]; then
     echo "Resource group filter: $RESOURCE_GROUPS"
@@ -164,7 +170,11 @@ fi
 VM_COUNT=$(echo "$VMS" | jq '. | length')
 
 if [[ "$VM_COUNT" -eq 0 ]]; then
-    echo "No VMs found with tags: $TAGS"
+    if [[ -n "$TAGS" ]]; then
+        echo "No VMs found with tags: $TAGS"
+    else
+        echo "No VMs found"
+    fi
     exit 0
 fi
 
