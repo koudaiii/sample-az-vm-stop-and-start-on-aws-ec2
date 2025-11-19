@@ -2,12 +2,19 @@
 
 set -euo pipefail
 
+# ログ出力関数（quietモードでは出力しない）
+log() {
+    if [[ "${QUIET:-false}" != true ]]; then
+        echo "$@"
+    fi
+}
+
 # .envファイルを読み込む
 load_env_file() {
     local env_file="${1:-.env}"
 
     if [[ -f "$env_file" ]]; then
-        echo "Loading environment variables from $env_file"
+        log "Loading environment variables from $env_file"
         # 空行とコメント行を除外して読み込む
         set -a
         source <(grep -v '^#' "$env_file" | grep -v '^[[:space:]]*$')
@@ -25,7 +32,7 @@ load_env_file "$PROJECT_ROOT/.env"
 # 使用方法を表示
 usage() {
     cat <<EOF
-Usage: $0 [--tags <tags>] [--resource-groups <resource_groups>] [--dry-run]
+Usage: $0 [--tags <tags>] [--resource-groups <resource_groups>] [--dry-run] [--quiet]
 
 Options:
     --tags <tags>                    Tags to filter VMs (optional)
@@ -35,6 +42,7 @@ Options:
                                      If not specified with --resource-groups, all VMs in the resource groups will be targeted
     --resource-groups <resource_groups>  Resource group names (optional, comma-separated)
     --dry-run                        Dry run mode (only show VMs, don't stop them)
+    --quiet                          Quiet mode (minimal output, skip confirmation prompt)
     -h, --help                       Show this help message
 
 Environment Variables (optional):
@@ -90,6 +98,7 @@ build_tag_filter() {
 TAGS=""
 RESOURCE_GROUPS=""
 DRY_RUN=false
+QUIET=false
 
 # 長いオプションのパース
 while [[ $# -gt 0 ]]; do
@@ -104,6 +113,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --quiet)
+            QUIET=true
             shift
             ;;
         -h|--help)
@@ -128,18 +141,18 @@ if [[ -n "${AZURE_CLIENT_ID:-}" ]] && \
    [[ -n "${AZURE_CLIENT_SECRET:-}" ]] && \
    [[ -n "${AZURE_TENANT_ID:-}" ]]; then
     # サービスプリンシパル認証
-    echo "Logging in to Azure with Service Principal..."
+    log "Logging in to Azure with Service Principal..."
     az login --service-principal \
         -u "$AZURE_CLIENT_ID" \
         -p "$AZURE_CLIENT_SECRET" \
         --tenant "$AZURE_TENANT_ID" \
         --output none
-    echo "Successfully logged in to Azure"
+    log "Successfully logged in to Azure"
 else
     # マネージドID認証を試す（失敗したら対話的ログイン）
-    echo "Logging in to Azure with Managed Identity..."
+    log "Logging in to Azure with Managed Identity..."
     if ! az login --identity --output none 2>/dev/null; then
-        echo "Managed Identity authentication failed, falling back to interactive login..."
+        log "Managed Identity authentication failed, falling back to interactive login..."
         az login
     fi
 fi
@@ -148,14 +161,14 @@ fi
 if [[ -n "$TAGS" ]]; then
     TAG_FILTER=$(build_tag_filter "$TAGS")
     QUERY="[?$TAG_FILTER].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
-    echo "Searching for VMs with tags: $TAGS..."
+    log "Searching for VMs with tags: $TAGS..."
 else
     QUERY="[].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
-    echo "Searching for all VMs..."
+    log "Searching for all VMs..."
 fi
 
 if [[ -n "$RESOURCE_GROUPS" ]]; then
-    echo "Resource group filter: $RESOURCE_GROUPS"
+    log "Resource group filter: $RESOURCE_GROUPS"
     # 複数のリソースグループに対応
     VMS="[]"
     IFS=',' read -ra RG_ARRAY <<< "$RESOURCE_GROUPS"
@@ -172,33 +185,37 @@ VM_COUNT=$(echo "$VMS" | jq '. | length')
 
 if [[ "$VM_COUNT" -eq 0 ]]; then
     if [[ -n "$TAGS" ]]; then
-        echo "No VMs found with tags: $TAGS"
+        log "No VMs found with tags: $TAGS"
     else
-        echo "No VMs found"
+        log "No VMs found"
     fi
     exit 0
 fi
 
-echo "Found $VM_COUNT VM(s):"
-echo "$VMS" | jq -r '.[] | "  - \(.Name) (Resource Group: \(.ResourceGroup), Power State: \(.PowerState), Tags: \(.Tags | to_entries | map("\(.key)=\(.value)") | join(", ")))"'
+log "Found $VM_COUNT VM(s):"
+if [[ "$QUIET" != true ]]; then
+    echo "$VMS" | jq -r '.[] | "  - \(.Name) (Resource Group: \(.ResourceGroup), Power State: \(.PowerState), Tags: \(.Tags | to_entries | map("\(.key)=\(.value)") | join(", ")))"'
+fi
 
 if [[ "$DRY_RUN" == true ]]; then
-    echo ""
-    echo "Dry run mode - no VMs will be stopped"
+    log ""
+    log "Dry run mode - no VMs will be stopped"
     exit 0
 fi
 
-# 確認プロンプト
-echo ""
-read -p "Do you want to stop these VMs? (yes/no): " -r
-if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]] && [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo "Operation cancelled"
-    exit 0
+# 確認プロンプト（quietモードではスキップ）
+if [[ "$QUIET" != true ]]; then
+    echo ""
+    read -p "Do you want to stop these VMs? (yes/no): " -r
+    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]] && [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Operation cancelled"
+        exit 0
+    fi
 fi
 
 # VMを停止
-echo ""
-echo "Stopping VMs..."
+log ""
+log "Stopping VMs..."
 
 SUCCESS_COUNT=0
 FAILURE_COUNT=0
@@ -209,14 +226,14 @@ while read -r vm; do
     POWER_STATE=$(echo "$vm" | jq -r '.PowerState')
 
     if [[ "$POWER_STATE" == "VM deallocated" ]] || [[ "$POWER_STATE" == "VM stopped" ]] || [[ "$POWER_STATE" == "VM deallocating" ]]; then
-        echo "  ⏭  $VM_NAME is already stopped or stopping (skipping)"
+        log "  ⏭  $VM_NAME is already stopped or stopping (skipping)"
         continue
     fi
 
-    echo "  ⏸  Stopping $VM_NAME in resource group $VM_RG..."
+    log "  ⏸  Stopping $VM_NAME in resource group $VM_RG..."
 
     if az vm deallocate -n "$VM_NAME" -g "$VM_RG" --no-wait; then
-        echo "  ✓  Stop command sent for $VM_NAME"
+        log "  ✓  Stop command sent for $VM_NAME"
         ((SUCCESS_COUNT++))
     else
         echo "  ✗  Failed to stop $VM_NAME" >&2
@@ -224,6 +241,6 @@ while read -r vm; do
     fi
 done < <(echo "$VMS" | jq -c '.[]')
 
-echo ""
-echo "Stop operation completed"
-echo "Note: VMs are being stopped asynchronously. Use 'az vm list --show-details' to check current status."
+log ""
+log "Stop operation completed"
+log "Note: VMs are being stopped asynchronously. Use 'az vm list --show-details' to check current status."
