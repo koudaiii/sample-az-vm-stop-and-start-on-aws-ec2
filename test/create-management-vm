@@ -118,7 +118,8 @@ EOF
 
 # Check if custom role already exists
 if az role definition list --name "$CUSTOM_ROLE_NAME" --query "[0].name" -o tsv 2>/dev/null | grep -q "."; then
-    echo "Custom role '$CUSTOM_ROLE_NAME' already exists, skipping creation..."
+    echo "Custom role '$CUSTOM_ROLE_NAME' already exists, updating..."
+    az role definition update --role-definition "$CUSTOM_ROLE_FILE" --output table
 else
     echo "Creating custom role '$CUSTOM_ROLE_NAME'..."
     az role definition create --role-definition "$CUSTOM_ROLE_FILE" --output table
