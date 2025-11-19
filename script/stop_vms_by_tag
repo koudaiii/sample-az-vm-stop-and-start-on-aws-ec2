@@ -81,7 +81,8 @@ build_tag_filter() {
     done
 
     # ANDでフィルタを結合
-    local filter=$(IFS=' && ' ; echo "${filter_parts[*]}")
+    local filter=$(printf ' && %s' "${filter_parts[@]}")
+    filter="${filter:4}"  # 最初の " && " を削除
     echo "$filter"
 }
 
