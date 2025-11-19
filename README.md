@@ -264,11 +264,11 @@ $ test/create-target-vm # Azure 上にある Stop または Start する予定�
 ```console
 $ test/create-management-vm  # ツール実行環境用の VM として Azure VM を構築
 
-$ ssh -i <your-key-path> azureuser@<your-ip>  # ツール実行環境へSSHログイン
+$ ssh -i <your-key-path> $USER@<your-ip>  # ツール実行環境へSSHログイン
 
-git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
-cd sample-az-vm-stop-and-start-on-aws-ec2/
-script/bootstrap
+kodaisakabe@management-vm20251119092905:~$ git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
+kodaisakabe@management-vm20251119092905:~$ cd sample-az-vm-stop-and-start-on-aws-ec2/
+kodaisakabe@management-vm20251119092905:~$ script/bootstrap
 ```
 
 
