@@ -47,6 +47,9 @@ $ cd sample-az-vm-stop-and-start-on-aws-ec2
 
 # 環境のセットアップと検証
 $ ./script/bootstrap
+
+# managed identity を使う場合
+$ ./script/bootstrap --skip-env
 ```
 
 `bootstrap`スクリプトは対話的に以下を行います:

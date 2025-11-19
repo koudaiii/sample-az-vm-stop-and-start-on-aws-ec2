@@ -13,6 +13,49 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# デフォルト値
+SKIP_ENV=false
+
+# ヘルプメッセージ
+show_help() {
+    cat << EOF
+Usage: $0 [OPTIONS]
+
+Bootstrap script for Azure VM Stop and Start Management.
+
+OPTIONS:
+    --skip-env    Skip .env file validation (use when running with managed identity)
+    -h, --help    Show this help message
+
+EXAMPLES:
+    # Standard setup with Service Principal
+    $0
+
+    # Setup with Managed Identity (skips .env requirement)
+    $0 --skip-env
+
+EOF
+    exit 0
+}
+
+# 引数のパース
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-env)
+            SKIP_ENV=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Run '$0 --help' for usage information."
+            exit 1
+            ;;
+    esac
+done
+
 # ステータス表示関数
 print_status() {
     echo -e "${BLUE}==>${NC} $1"
@@ -128,22 +171,30 @@ if [[ "$TOOLS_OK" != true ]]; then
 fi
 
 # .env ファイルの確認
-print_status "Checking environment configuration..."
-ENV_FILE="$PROJECT_ROOT/.env"
-
-if [[ -f "$ENV_FILE" ]]; then
-    print_success ".env file exists"
+if [[ "$SKIP_ENV" == true ]]; then
+    print_status "Skipping environment configuration check (--skip-env flag set)"
+    print_success "Using managed identity or user identity for authentication"
 else
-    print_error ".env file does not exist"
-    echo ""
-    echo "To create a Service Principal and .env file:"
-    echo "  az login"
-    echo "  $SCRIPT_DIR/create-sp --subscription <your-subscription-id>"
-    echo ""
-    echo "Or create .env manually with:"
-    echo "  AZURE_CLIENT_ID=<your-client-id>"
-    echo "  AZURE_CLIENT_SECRET=<your-client-secret>"
-    echo "  AZURE_TENANT_ID=<your-tenant-id>"
+    print_status "Checking environment configuration..."
+    ENV_FILE="$PROJECT_ROOT/.env"
+
+    if [[ -f "$ENV_FILE" ]]; then
+        print_success ".env file exists"
+    else
+        print_error ".env file does not exist"
+        echo ""
+        echo "To create a Service Principal and .env file:"
+        echo "  az login"
+        echo "  $SCRIPT_DIR/create-sp --subscription <your-subscription-id>"
+        echo ""
+        echo "Or create .env manually with:"
+        echo "  AZURE_CLIENT_ID=<your-client-id>"
+        echo "  AZURE_CLIENT_SECRET=<your-client-secret>"
+        echo "  AZURE_TENANT_ID=<your-tenant-id>"
+        echo ""
+        echo "Or if you are using managed identity, run with --skip-env flag:"
+        echo "  $0 --skip-env"
+    fi
 fi
 
 echo ""
@@ -164,21 +215,40 @@ else
 fi
 
 # 環境変数チェック
-if [[ -f "$ENV_FILE" ]]; then
-    source <(grep -v '^#' "$ENV_FILE" | grep -v '^[[:space:]]*$')
+if [[ "$SKIP_ENV" == true ]]; then
+    print_success "Environment configuration: Using managed identity (skipped)"
+else
+    if [[ -f "$ENV_FILE" ]]; then
+        source <(grep -v '^#' "$ENV_FILE" | grep -v '^[[:space:]]*$')
 
-    if [[ -n "${AZURE_CLIENT_ID:-}" ]] && [[ -n "${AZURE_CLIENT_SECRET:-}" ]] && [[ -n "${AZURE_TENANT_ID:-}" ]]; then
-        print_success "Environment configuration: OK"
+        if [[ -n "${AZURE_CLIENT_ID:-}" ]] && [[ -n "${AZURE_CLIENT_SECRET:-}" ]] && [[ -n "${AZURE_TENANT_ID:-}" ]]; then
+            print_success "Environment configuration: OK"
+        else
+            print_error "Environment configuration: Incomplete"
+            ALL_READY=false
+        fi
     else
-        print_error "Environment configuration: Incomplete"
+        print_error "Environment configuration: Missing .env file"
         ALL_READY=false
     fi
-else
-    print_error "Environment configuration: Missing .env file"
-    ALL_READY=false
 fi
 
-if [[ -f "$ENV_FILE" ]]; then
+if [[ "$SKIP_ENV" == true ]]; then
+    # Managed Identity の検証
+    print_status "Validating managed identity access..."
+    # Azure CLI は既にログイン済み（managed identity または user identity）と想定
+    # VM一覧の取得テスト
+    if VM_COUNT=$(az vm list --query 'length(@)' -o tsv 2>/dev/null); then
+        print_success "Managed identity is working"
+        print_success "Can access $VM_COUNT VM(s)"
+    else
+        print_error "Failed to access Azure resources"
+        echo ""
+        print_warning "Please ensure managed identity is configured correctly."
+        print_warning "Or run 'az login' if using user identity."
+        ALL_READY=false
+    fi
+elif [[ -f "$ENV_FILE" ]]; then
     # 環境変数の読み込み
     set -a
     source <(grep -v '^#' "$ENV_FILE" | grep -v '^[[:space:]]*$')
@@ -201,6 +271,7 @@ if [[ -f "$ENV_FILE" ]]; then
         print_error "Service Principal credentials are invalid"
         echo ""
         print_warning "Please check your .env file or create a new Service Principal."
+        ALL_READY=false
     fi
 fi
 
@@ -209,6 +280,10 @@ echo ""
 if [[ "$ALL_READY" == true ]]; then
     print_success "Environment is ready!"
     echo ""
+    if [[ "$SKIP_ENV" == true ]]; then
+        echo "Using managed identity or user identity for authentication."
+        echo ""
+    fi
     echo "You can now use the VM management scripts:"
     echo "  $SCRIPT_DIR/stop_vms_by_tag --tags <tags>"
     echo "  $SCRIPT_DIR/start_vms_by_tag --tags <tags>"
@@ -216,7 +291,11 @@ else
     print_warning "Environment setup is incomplete."
     echo ""
     echo "Please complete the setup and run this script again:"
-    echo "  $0"
+    if [[ "$SKIP_ENV" == true ]]; then
+        echo "  $0 --skip-env"
+    else
+        echo "  $0"
+    fi
 fi
 
 echo ""
