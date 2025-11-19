@@ -65,30 +65,34 @@ $ ./script/bootstrap --skip-env
 ### VM停止スクリプト
 
 ```console
-$ ./script/stop_vms_by_tag --tags <tags> [options]
+$ ./script/stop_vms_by_tag [--tags <tags>] [--resource-groups <resource_groups>] [options]
 ```
 
 オプション:
-- `--tags <tags>`: フィルタリングするタグ (必須)
+- `--tags <tags>`: フィルタリングするタグ (オプション)
   - フォーマット: `key1=value1,key2,key3=value3`
   - `key=value`: 指定したタグキーと値が完全一致するVMにマッチ
   - `key`: 指定したタグキーを持つVM（値は任意）にマッチ
+  - `--resource-groups`と併用しない場合は必須
 - `--resource-groups <resource_groups>`: リソースグループ名で絞り込み (オプション、カンマ区切りで複数指定可能)
+  - `--tags`と併用しない場合、指定したリソースグループ内の全VMが対象
+  - `--tags`または`--resource-groups`のいずれか、または両方の指定が必須
 - `--dry-run`: ドライランモード (VMを停止せず、対象VMのみ表示)
+- `--quiet`: Quietモード (出力を最小限にし、確認プロンプトをスキップ)
 - `-h, --help`: ヘルプメッセージを表示
 
 ### VM起動スクリプト
 
 ```console
-$ ./script/start_vms_by_tag --tags <tags> [options]
+$ ./script/start_vms_by_tag [--tags <tags>] [--resource-groups <resource_groups>] [options]
 ```
 
-オプションは停止スクリプトと同様です。
+オプションは停止スクリプトと同様です（VMを起動する点のみ異なります）。
 
 ## 使用例
 
 ```console
-# Environmentタグが"Production"のVMを停止
+# タグのみ指定: Environmentタグが"Production"のVMを停止
 $ ./script/stop_vms_by_tag --tags Environment=Production
 
 # 複数のタグ条件でVMを停止
@@ -98,23 +102,28 @@ $ ./script/stop_vms_by_tag --tags Environment=Production,AutoShutdown
 ## Environment=ProductionかつOwner=TeamAのVMを停止
 $ ./script/stop_vms_by_tag --tags Environment=Production,Owner=TeamA
 
-# 特定のリソースグループ内のVMを起動
+# リソースグループのみ指定: 特定のリソースグループ内の全VMを起動
 $ ./script/start_vms_by_tag --resource-groups myResourceGroup
 
-# 特定のリソースグループ内のVMを起動
+# タグとリソースグループを併用: 特定のリソースグループ内の特定タグを持つVMのみを起動
 $ ./script/start_vms_by_tag --tags Environment=Development --resource-groups myResourceGroup
 
 # 複数のリソースグループを指定
 $ ./script/start_vms_by_tag --tags Environment=Production --resource-groups rg1,rg2,rg3
 
+# リソースグループのみで複数指定（タグ指定なし）
+$ ./script/stop_vms_by_tag --resource-groups rg1,rg2,rg3
+
 # ドライランで対象VMを確認
 $ ./script/stop_vms_by_tag --tags Environment=Staging --dry-run
 
-# quiet オプション
+# Quietモード: 確認プロンプトをスキップし、出力を最小限にする
+$ ./script/stop_vms_by_tag --tags Environment=Staging --quiet
+
+# ドライラン + Quietモード
 $ ./script/stop_vms_by_tag --tags Environment=Staging --dry-run --quiet
 
 # タグの値を問わず、特定のタグキーを持つVMを対象にする
-
 ## AutoShutdownタグを持つ全てのVMを停止（値は任意）
 $ ./script/stop_vms_by_tag --tags AutoShutdown
 ```
@@ -126,11 +135,15 @@ $ ./script/stop_vms_by_tag --tags AutoShutdown
 EC2インスタンスのcrontabに登録することで、定期的なVM起動・停止が可能です。
 
 ```bash
-# 平日朝9時にVMを起動
-0 9 * * 1-5 /path/to/script/start_vms_by_tag --tags AutoStartStop >> /var/log/azure-vm-start.log 2>&1
+# 平日朝9時にVMを起動（--quietオプションで確認プロンプトをスキップ）
+0 9 * * 1-5 /path/to/script/start_vms_by_tag --tags AutoStartStop --quiet >> /var/log/azure-vm-start.log 2>&1
 
-# 平日夜19時にVMを停止
-0 19 * * 1-5 /path/to/script/stop_vms_by_tag --tags AutoStartStop >> /var/log/azure-vm-stop.log 2>&1
+# 平日夜19時にVMを停止（--quietオプションで確認プロンプトをスキップ）
+0 19 * * 1-5 /path/to/script/stop_vms_by_tag --tags AutoStartStop --quiet >> /var/log/azure-vm-stop.log 2>&1
+
+# 特定のリソースグループ内の全VMを起動・停止する例
+0 9 * * 1-5 /path/to/script/start_vms_by_tag --resource-groups prod-rg --quiet >> /var/log/azure-vm-start.log 2>&1
+0 19 * * 1-5 /path/to/script/stop_vms_by_tag --resource-groups prod-rg --quiet >> /var/log/azure-vm-stop.log 2>&1
 ```
 
 ### AWS Systems Manager(SSM)を使用した実行
