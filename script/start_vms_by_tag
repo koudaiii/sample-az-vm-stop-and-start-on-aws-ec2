@@ -193,7 +193,8 @@ if [[ "$VM_COUNT" -eq 0 ]]; then
 fi
 
 log "Found $VM_COUNT VM(s):"
-echo "$VMS" | jq -r '.[] | "  - \(.Name) (Resource Group: \(.ResourceGroup), Power State: \(.PowerState), Tags: \(.Tags | to_entries | map("\(.key)=\(.value)") | join(", ")))"'
+echo -e "Name\tResourceGroup\tPowerState\tTags"
+echo "$VMS" | jq -r '.[] | "\(.Name)\t\(.ResourceGroup)\t\(.PowerState)\t\(.Tags | to_entries | map("\(.key)=\(.value)") | join(", "))"'
 
 if [[ "$DRY_RUN" == true ]]; then
     log ""
