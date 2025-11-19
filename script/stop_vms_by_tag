@@ -26,9 +26,6 @@ load_env_file() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# .envファイルを読み込む（プロジェクトルートから）
-load_env_file "$PROJECT_ROOT/.env"
-
 # 使用方法を表示
 usage() {
     cat <<EOF
@@ -128,6 +125,9 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# .envファイルを読み込む（プロジェクトルートから）
+load_env_file "$PROJECT_ROOT/.env"
 
 # パラメータのバリデーション
 # --tags も --resource-groups も指定されていない場合はエラー
