@@ -1,13 +1,36 @@
-## テスト環境(on AWS)
+# テスト環境構築ガイド
+
+このドキュメントでは、`stop_vms_by_tag` / `start_vms_by_tag` スクリプトのテスト環境構築方法を説明します。
+
+基本的な使用方法については [README.md](../README.md) を参照してください。
+
+## テスト用スクリプトとファイル
+
+- `test/cloud-init` - AWS EC2 作成時に使用する cloud-init 設定ファイル
+- `test/cloud-init-management.yml` - Azure VM 作成時に使用する cloud-init 設定ファイル
+- `test/create-management-instance` - AWS EC2 管理用インスタンス作成スクリプト
+- `test/create-management-vm` - Azure VM 管理用インスタンス作成スクリプト
+- `test/create-target-vm` - Stop/Start 対象の Azure VM 作成スクリプト
+
+
+## パターン1: AWS EC2 上でサービスプリンシパルを使用
+
+このパターンでは、AWS EC2 インスタンス上で Azure サービスプリンシパルを使用して Azure VM を管理します。
+
+### 1. サービスプリンシパルの作成
 
 ```console
 $ script/create-sp
 $ cat .env | pbcopy # またはファイルの中身をコピー
 ```
 
+### 2. 対象 Azure VM の作成
+
 ```console
 $ test/create-target-vm # Azure 上にある Stop または Start する予定の VM 構築
 ```
+
+### 3. AWS EC2 管理用インスタンスの作成とセットアップ
 
 ```console
 $ test/create-management-instance # ツール実行環境用の VM として AWS EC2 を構築
@@ -18,6 +41,13 @@ $ ssh -i <your-key-path> ec2-user@<your-ip> # ツール実行環境へSSHログ�
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ cd sample-az-vm-stop-and-start-on-aws-ec2/
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ vim .env # コピーした内容を転記
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/bootstrap
+```
+
+### 4. スクリプトの実行例
+
+以下は `project` タグを持つ VM を対象とした実行例です。
+
+```console
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ script/stop_vms_by_tag --tags project --dry-run
 Loading environment variables from /home/ec2-user/sample-az-vm-stop-and-start-on-aws-ec2/.env
 Logging in to Azure with Service Principal...
@@ -111,11 +141,17 @@ Note: VMs are being started asynchronously. Use 'az vm list --show-details' to c
 [ec2-user@ip-10-0-1-168 sample-az-vm-stop-and-start-on-aws-ec2]$ 
 ```
 
-## テスト環境(on Azure)
+## パターン2: Azure VM 上でマネージドIDを使用
+
+このパターンでは、Azure VM インスタンス上でマネージドIDを使用して Azure VM を管理します。
+
+### 1. 対象 Azure VM の作成
 
 ```console
 $ test/create-target-vm # Azure 上にある Stop または Start する予定の VM 構築
 ```
+
+### 2. Azure VM 管理用インスタンスの作成とセットアップ
 
 ```console
 $ test/create-management-vm  # ツール実行環境用の VM として Azure VM を構築
@@ -125,6 +161,13 @@ $ ssh -i <your-key-path> $USER@<your-ip>  # ツール実行環境へSSHログイ
 kodaisakabe@management-vm20251119092905:~$ git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
 kodaisakabe@management-vm20251119092905:~$ cd sample-az-vm-stop-and-start-on-aws-ec2/
 kodaisakabe@management-vm20251119092905:~$ script/bootstrap --skip-env
+```
+
+### 3. スクリプトの実行例
+
+以下は `project` タグを持つ VM を対象とした実行例です。
+
+```console
 kodaisakabe@management-vm20251119092905:~$ script/start_vms_by_tag --tags project
 Logging in to Azure with Managed Identity...
 Searching for VMs with tags: project...

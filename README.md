@@ -42,7 +42,7 @@ Azureには3種類の認証方法があり、それぞれ異なるユースケ�
 
 ```console
 # リポジトリのクローン
-$ git clone <repository-url>
+$ git clone https://github.com/koudaiii/sample-az-vm-stop-and-start-on-aws-ec2.git
 $ cd sample-az-vm-stop-and-start-on-aws-ec2
 
 # 環境のセットアップと検証
@@ -60,9 +60,22 @@ $ ./script/bootstrap --skip-env
 
 環境が整っているか確認したい場合も、このスクリプトを実行してください。
 
+### サービスプリンシパルを利用する場合(例AWS)は、サービスプリンシパルを作成
+
+```console
+$ ./script/create-sp
+$ cat .env | pbcopy # またはファイルの中身をコピー
+```
+
+```console
+$ vim .env # AWS 上
+# 環境のセットアップと検証
+$ ./script/bootstrap
+```
+
 ## 使用方法
 
-### VM停止スクリプト
+### `stop_vms_by_tag` スクリプト
 
 ```console
 $ ./script/stop_vms_by_tag [--tags <tags>] [--resource-groups <resource_groups>] [options]
@@ -81,13 +94,13 @@ $ ./script/stop_vms_by_tag [--tags <tags>] [--resource-groups <resource_groups>]
 - `--quiet`: Quietモード (出力を最小限にし、確認プロンプトをスキップ)
 - `-h, --help`: ヘルプメッセージを表示
 
-### VM起動スクリプト
+### `start_vms_by_tag` スクリプト
 
 ```console
 $ ./script/start_vms_by_tag [--tags <tags>] [--resource-groups <resource_groups>] [options]
 ```
 
-オプションは停止スクリプトと同様です（VMを起動する点のみ異なります）。
+オプションは `stop_vms_by_tag` スクリプトと同様です（VMを起動する点のみ異なります）。
 
 ## 使用例
 
@@ -136,19 +149,27 @@ EC2インスタンスのcrontabに登録することで、定期的なVM起動�
 
 ```bash
 # 平日朝9時にVMを起動（--quietオプションで確認プロンプトをスキップ）
-0 9 * * 1-5 /path/to/script/start_vms_by_tag --tags AutoStartStop --quiet >> /var/log/azure-vm-start.log 2>&1
+0 9 * * 1-5 $HOME/sample-az-vm-stop-and-start-on-aws-ec2/script/start_vms_by_tag --tags AutoStartStop --quiet >> /var/log/azure-vm-start.log 2>&1
 
 # 平日夜19時にVMを停止（--quietオプションで確認プロンプトをスキップ）
-0 19 * * 1-5 /path/to/script/stop_vms_by_tag --tags AutoStartStop --quiet >> /var/log/azure-vm-stop.log 2>&1
+0 19 * * 1-5 $HOME/sample-az-vm-stop-and-start-on-aws-ec2/script/stop_vms_by_tag --tags AutoStartStop --quiet >> /var/log/azure-vm-stop.log 2>&1
 
 # 特定のリソースグループ内の全VMを起動・停止する例
-0 9 * * 1-5 /path/to/script/start_vms_by_tag --resource-groups prod-rg --quiet >> /var/log/azure-vm-start.log 2>&1
-0 19 * * 1-5 /path/to/script/stop_vms_by_tag --resource-groups prod-rg --quiet >> /var/log/azure-vm-stop.log 2>&1
+0 9 * * 1-5 $HOME/sample-az-vm-stop-and-start-on-aws-ec2/script/start_vms_by_tag --resource-groups prod-rg --quiet >> /var/log/azure-vm-start.log 2>&1
+0 19 * * 1-5 $HOME/sample-az-vm-stop-and-start-on-aws-ec2/script/stop_vms_by_tag --resource-groups prod-rg --quiet >> /var/log/azure-vm-stop.log 2>&1
 ```
 
 ### AWS Systems Manager(SSM)を使用した実行
 
 AWS Systems Managerを使用して、EC2インスタンス上でスクリプトを実行することも可能です。
+
+## テスト環境
+
+テスト環境の構築方法や、実際のコマンド実行例については [doc/README.md](./doc/README.md) を参照してください。
+
+以下の2つのテストパターンを提供しています:
+- **AWS EC2 + サービスプリンシパル**: AWS EC2 上でサービスプリンシパルを使用して Azure VM を管理
+- **Azure VM + マネージドID**: Azure VM 上でマネージドIDを使用して Azure VM を管理
 
 ## ライセンス
 
