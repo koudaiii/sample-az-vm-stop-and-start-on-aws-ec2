@@ -32,15 +32,15 @@ usage() {
 Usage: $0 [--tags <tags>] [--resource-groups <resource_groups>] [--dry-run] [--quiet]
 
 Options:
-    --tags <tags>                    Tags to filter VMs (optional)
-                                     Format: key1=value1,key2,key3=value3
-                                     - key=value: Match VMs with this exact tag
-                                     - key: Match VMs that have this tag (any value)
-                                     If not specified with --resource-groups, all VMs in the resource groups will be targeted
-    --resource-groups <resource_groups>  Resource group names (optional, comma-separated)
-    --dry-run                        Dry run mode (only show VMs, don't start them)
-    --quiet                          Quiet mode (minimal output, skip confirmation prompt)
-    -h, --help                       Show this help message
+    -t, --tags <tags>                    Tags to filter VMs (optional)
+                                         Format: key1=value1,key2,key3=value3
+                                         - key=value: Match VMs with this exact tag
+                                         - key: Match VMs that have this tag (any value)
+                                         If not specified with --resource-groups, all VMs in the resource groups will be targeted
+    -g, --resource-groups <resource_groups>  Resource group names (optional, comma-separated)
+    -d, --dry-run                        Dry run mode (only show VMs, don't start them)
+    -q, --quiet                          Quiet mode (minimal output, skip confirmation prompt)
+    -h, --help                           Show this help message
 
 Environment Variables (optional):
     AZURE_CLIENT_ID      Azure Service Principal Client ID
@@ -100,19 +100,19 @@ QUIET=false
 # 長いオプションのパース
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --tags)
+        -t|--tags)
             TAGS="$2"
             shift 2
             ;;
-        --resource-groups)
+        -g|--resource-groups)
             RESOURCE_GROUPS="$2"
             shift 2
             ;;
-        --dry-run)
+        -d|--dry-run)
             DRY_RUN=true
             shift
             ;;
-        --quiet)
+        -q|--quiet)
             QUIET=true
             shift
             ;;

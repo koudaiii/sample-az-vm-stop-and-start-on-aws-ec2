@@ -82,16 +82,16 @@ $ ./script/stop_vms_by_tag [--tags <tags>] [--resource-groups <resource_groups>]
 ```
 
 オプション:
-- `--tags <tags>`: フィルタリングするタグ (オプション)
+- `-t, --tags <tags>`: フィルタリングするタグ (オプション)
   - フォーマット: `key1=value1,key2,key3=value3`
   - `key=value`: 指定したタグキーと値が完全一致するVMにマッチ
   - `key`: 指定したタグキーを持つVM（値は任意）にマッチ
   - `--resource-groups`と併用しない場合は必須
-- `--resource-groups <resource_groups>`: リソースグループ名で絞り込み (オプション、カンマ区切りで複数指定可能)
+- `-g, --resource-groups <resource_groups>`: リソースグループ名で絞り込み (オプション、カンマ区切りで複数指定可能)
   - `--tags`と併用しない場合、指定したリソースグループ内の全VMが対象
   - `--tags`または`--resource-groups`のいずれか、または両方の指定が必須
-- `--dry-run`: ドライランモード (VMを停止せず、対象VMのみ表示)
-- `--quiet`: Quietモード (出力を最小限にし、確認プロンプトをスキップ)
+- `-d, --dry-run`: ドライランモード (VMを停止せず、対象VMのみ表示)
+- `-q, --quiet`: Quietモード (出力を最小限にし、確認プロンプトをスキップ)
 - `-h, --help`: ヘルプメッセージを表示
 
 ### `start_vms_by_tag` スクリプト
