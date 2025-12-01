@@ -49,7 +49,8 @@ Environment Variables (optional):
 
 Authentication:
     - If all three environment variables are set: Service Principal authentication
-    - Otherwise: Managed Identity authentication (falls back to interactive login if not available)
+    - Otherwise: Uses existing Azure CLI authentication or Managed Identity authentication
+    - If neither is available: Exits with an error message
 
 Note:
     If a .env file exists in the project root, it will be automatically loaded.
@@ -149,11 +150,16 @@ if [[ -n "${AZURE_CLIENT_ID:-}" ]] && \
         --output none
     log "Successfully logged in to Azure"
 else
-    # マネージドID認証を試す（失敗したら対話的ログイン）
-    log "Logging in to Azure with Managed Identity..."
-    if ! az login --identity --output none 2>/dev/null; then
-        log "Managed Identity authentication failed, falling back to interactive login..."
-        az login
+    # 既存の認証またはマネージドID認証を試す
+    if az account show --output none 2>/dev/null || az login --identity --output none 2>/dev/null; then
+        log "Successfully authenticated to Azure"
+    else
+        echo "Error: No valid Azure authentication found" >&2
+        echo "Please authenticate using one of the following methods:" >&2
+        echo "  1. Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID environment variables" >&2
+        echo "  2. Run 'az login' manually before executing this script" >&2
+        echo "  3. Run this script on an Azure VM or AWS EC2 instance with Managed Identity configured" >&2
+        exit 1
     fi
 fi
 
