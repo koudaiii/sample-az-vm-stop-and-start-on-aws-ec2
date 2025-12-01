@@ -166,10 +166,10 @@ fi
 # VMを検索するJMESPathクエリを構築
 if [[ -n "$TAGS" ]]; then
     TAG_FILTER=$(build_tag_filter "$TAGS")
-    QUERY="[?$TAG_FILTER].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
+    QUERY="[?$TAG_FILTER].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, PrivateIp:privateIps, PublicIp:publicIps, Tags:tags}"
     log "Searching for VMs with tags: $TAGS..."
 else
-    QUERY="[].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, Tags:tags}"
+    QUERY="[].{Name:name, ResourceGroup:resourceGroup, PowerState:powerState, PrivateIp:privateIps, PublicIp:publicIps, Tags:tags}"
     log "Searching for all VMs..."
 fi
 
@@ -199,8 +199,8 @@ if [[ "$VM_COUNT" -eq 0 ]]; then
 fi
 
 log "Found $VM_COUNT VM(s):"
-echo -e "Name\tResourceGroup\tPowerState\tTags"
-echo "$VMS" | jq -r '.[] | "\(.Name)\t\(.ResourceGroup)\t\(.PowerState)\t\(.Tags | to_entries | map("\(.key)=\(.value)") | join(", "))"'
+echo -e "Name\tResourceGroup\tPowerState\tPrivateIP\tPublicIP\tTags"
+echo "$VMS" | jq -r '.[] | "\(.Name)\t\(.ResourceGroup)\t\(.PowerState)\t\((.PrivateIp // "-") | if type == "array" then join(", ") else . end)\t\((.PublicIp // "-") | if type == "array" then join(", ") else . end)\t\((.Tags // {}) | to_entries | map("\(.key)=\(.value)") | join(", "))"'
 
 if [[ "$DRY_RUN" == true ]]; then
     log ""
